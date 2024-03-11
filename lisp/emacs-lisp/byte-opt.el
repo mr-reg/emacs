@@ -164,7 +164,7 @@ Earlier variables shadow later ones with the same name.")
        ;; The byte-code will be really inlined in byte-compile-unfold-bcf.
        (byte-compile--check-arity-bytecode form fn)
        `(,fn ,@(cdr form)))
-      ((or `(lambda . ,_) `(closure . ,_))
+      ((or `(lambda . ,_) (pred interpreted-function-p))
        ;; While byte-compile-unfold-bcf can inline dynbind byte-code into
        ;; letbind byte-code (or any other combination for that matter), we
        ;; can only inline dynbind source into dynbind source or lexbind
@@ -482,7 +482,7 @@ There can be multiple entries for the same NAME if it has several aliases.")
          (push name byte-optimize--dynamic-vars)
          `(,fn ,name . ,optimized-rest)))
 
-      (`(,(pred byte-code-function-p) . ,exps)
+      (`(,(pred closurep) . ,exps)
        (cons fn (mapcar #'byte-optimize-form exps)))
 
       ((guard (when for-effect
@@ -1873,6 +1873,7 @@ See Info node `(elisp) Integer Basics'."
          charsetp
          ;; data.c
          arrayp atom bare-symbol-p bool-vector-p bufferp byte-code-function-p
+         interpreted-function-p closurep
          byteorder car-safe cdr-safe char-or-string-p char-table-p
          condition-variable-p consp eq floatp indirect-function
          integer-or-marker-p integerp keywordp listp markerp
@@ -3116,7 +3117,6 @@ If FOR-EFFECT is non-nil, the return value is assumed to be of no importance."
 ;;
 (eval-when-compile
  (or (compiled-function-p (symbol-function 'byte-optimize-form))
-     (assq 'byte-code (symbol-function 'byte-optimize-form))
      (let ((byte-optimize nil)
 	   (byte-compile-warnings nil))
        (mapc (lambda (x)

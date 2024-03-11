@@ -224,8 +224,13 @@ for example, (type-of 1) returns `integer'.  */)
         case PVEC_WINDOW_CONFIGURATION: return Qwindow_configuration;
         case PVEC_PROCESS: return Qprocess;
         case PVEC_WINDOW: return Qwindow;
-        case PVEC_SUBR: return Qsubr;
-        case PVEC_COMPILED: return Qcompiled_function;
+        case PVEC_SUBR:
+          return SUBR_NATIVE_COMPILEDP (object) ?  Qsubr_native_elisp
+                 : XSUBR (object)->max_args == UNEVALLED ? Qspecial_form
+                 : Qsubr_primitive;
+        case PVEC_COMPILED:
+          return CONSP (AREF (object, 1))
+                 ? Qinterpreted_function : Qbyte_code_function;
         case PVEC_BUFFER: return Qbuffer;
         case PVEC_CHAR_TABLE: return Qchar_table;
         case PVEC_BOOL_VECTOR: return Qbool_vector;
@@ -495,12 +500,32 @@ DEFUN ("subrp", Fsubrp, Ssubrp, 1, 1, 0,
   return Qnil;
 }
 
+DEFUN ("closurep", Fclosurep, Sclosurep,
+       1, 1, 0,
+       doc: /* Return t if OBJECT is a function object.  */)
+  (Lisp_Object object)
+{
+  if (COMPILEDP (object))
+    return Qt;
+  return Qnil;
+}
+
 DEFUN ("byte-code-function-p", Fbyte_code_function_p, Sbyte_code_function_p,
        1, 1, 0,
        doc: /* Return t if OBJECT is a byte-compiled function object.  */)
   (Lisp_Object object)
 {
-  if (COMPILEDP (object))
+  if (COMPILEDP (object) && STRINGP (AREF (object, 1)))
+    return Qt;
+  return Qnil;
+}
+
+DEFUN ("interpreted-function-p", Finterpreted_function_p,
+       Sinterpreted_function_p, 1, 1, 0,
+       doc: /* Return t if OBJECT is an interpreted function value.  */)
+  (Lisp_Object object)
+{
+  if (COMPILEDP (object) && CONSP (AREF (object, 1)))
     return Qt;
   return Qnil;
 }
@@ -4217,8 +4242,11 @@ syms_of_data (void)
   DEFSYM (Qwindow_configuration, "window-configuration");
   DEFSYM (Qprocess, "process");
   DEFSYM (Qwindow, "window");
-  DEFSYM (Qsubr, "subr");
-  DEFSYM (Qcompiled_function, "compiled-function");
+  DEFSYM (Qspecial_form, "special-form");
+  DEFSYM (Qsubr_primitive, "subr-primitive");
+  DEFSYM (Qsubr_native_elisp, "subr-native-elisp");
+  DEFSYM (Qbyte_code_function, "byte-code-function");
+  DEFSYM (Qinterpreted_function, "interpreted-function");
   DEFSYM (Qbuffer, "buffer");
   DEFSYM (Qframe, "frame");
   DEFSYM (Qvector, "vector");
@@ -4282,6 +4310,8 @@ syms_of_data (void)
   defsubr (&Smarkerp);
   defsubr (&Ssubrp);
   defsubr (&Sbyte_code_function_p);
+  defsubr (&Sinterpreted_function_p);
+  defsubr (&Sclosurep);
   defsubr (&Smodule_function_p);
   defsubr (&Schar_or_string_p);
   defsubr (&Sthreadp);

@@ -2703,7 +2703,7 @@ function as needed."
                        (or (stringp doc)
                            (fixnump doc) (fixnump (cdr-safe doc))))))
     (pcase function
-      ((pred byte-code-function-p)
+      ((pred closurep)
        (when (> (length function) 4)
          (let ((doc (aref function 4)))
            (when (funcall docstring-p doc) doc))))

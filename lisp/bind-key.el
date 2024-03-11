@@ -454,30 +454,19 @@ other modes.  See `override-global-mode'."
 
 (defun bind-key--get-binding-description (elem)
   (cond
-   ((listp elem)
-    (cond
-     ((memq (car elem) '(lambda function))
-      (if (and bind-key-describe-special-forms
-               (stringp (nth 2 elem)))
-          (nth 2 elem)
-        "#<lambda>"))
-     ((eq 'closure (car elem))
-      (if (and bind-key-describe-special-forms
-               (stringp (nth 3 elem)))
-          (nth 3 elem)
-        "#<closure>"))
-     ((eq 'keymap (car elem))
+   ((eq 'keymap (car-safe elem))
       "#<keymap>")
-     (t
-      elem)))
    ;; must be a symbol, non-symbol keymap case covered above
    ((and bind-key-describe-special-forms (keymapp elem))
     (let ((doc (get elem 'variable-documentation)))
       (if (stringp doc) doc elem)))
    ((symbolp elem)
     elem)
-   (t
-    "#<byte-compiled lambda>")))
+   ((functionp elem)
+    (cond
+     ((compiled-function-p elem) "#<compiled-function>")
+     (t "#<function>")))
+   (t)))
 
 (defun bind-key--compare-keybindings (l r)
   (let* ((regex bind-key-segregation-regexp)

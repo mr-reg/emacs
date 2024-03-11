@@ -210,51 +210,6 @@ converted to the compressed format."
 ;; Therefore, hide the default prompt.
 (gnus-convert-mark-converter-prompt 'gnus-agent-unlist-expire-days t)
 
-(defun gnus-agent-unhook-expire-days (_converting-to)
-  "Remove every lambda from `gnus-group-prepare-hook' that mention the
-symbol `gnus-agent-do-once' in their definition.  This should NOT be
-necessary as gnus-agent.el no longer adds them.  However, it is
-possible that the hook was persistently saved."
-    (let ((h t)) ; Iterate from bgn of hook.
-      (while h
-        (let ((func (progn (when (eq h t)
-                             ;; Init h to list of functions.
-                             (setq h (cond ((listp gnus-group-prepare-hook)
-                                            gnus-group-prepare-hook)
-                                           ((boundp 'gnus-group-prepare-hook)
-                                            (list gnus-group-prepare-hook)))))
-                           (pop h))))
-
-          (when (cond ((byte-code-function-p func)
-                       ;; Search def. of compiled function for
-                       ;; gnus-agent-do-once string.
-                       (let* (definition
-                               print-level
-                               print-length
-                               (standard-output
-                                (lambda (char)
-                                  (setq definition (cons char definition)))))
-                         (princ func) ; Populates definition with reversed list
-				      ; of characters.
-                         (let* ((i (length definition))
-                                (s (make-string i 0)))
-                           (while definition
-                             (aset s (setq i (1- i)) (pop definition)))
-
-                           (string-match "\\bgnus-agent-do-once\\b" s))))
-                      ((listp func)
-                       (eq (cadr (nth 2 func)) 'gnus-agent-do-once) ; Handles eval'd lambda.
-                       ))
-
-            (remove-hook 'gnus-group-prepare-hook func)
-            ;; I don't what remove-hook is going to actually do to the
-            ;; hook list so start over from the beginning.
-            (setq h t))))))
-
-;; gnus-agent-unhook-expire-days is safe in that it does not modify
-;; the .newsrc.eld file.
-(gnus-convert-mark-converter-prompt 'gnus-agent-unhook-expire-days t)
-
 (provide 'legacy-gnus-agent)
 
 ;;; legacy-gnus-agent.el ends here

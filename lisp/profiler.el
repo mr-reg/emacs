@@ -107,10 +107,11 @@
 (defun profiler-format-entry (entry)
   "Format ENTRY in human readable string.
 ENTRY would be a function name of a function itself."
-  (cond ((memq (car-safe entry) '(closure lambda))
+  ;; FIXME: Use a `function-name' primitive?
+  (cond ((eq (car-safe entry) 'lambda)
 	 (format "#<lambda %#x>" (sxhash entry)))
-	((byte-code-function-p entry)
-	 (format "#<compiled %#x>" (sxhash entry)))
+	((closurep entry)
+	 (format "#<closure %#x>" (sxhash entry)))
 	((or (subrp entry) (symbolp entry) (stringp entry))
 	 (format "%s" entry))
 	(t
@@ -296,10 +297,7 @@ Optional argument MODE means only check for the specified mode (cpu or mem)."
 
 
 (define-hash-table-test 'profiler-function-equal #'function-equal
-  (lambda (f) (cond
-          ((byte-code-function-p f) (aref f 1))
-          ((eq (car-safe f) 'closure) (cddr f))
-          (t f))))
+                        (lambda (f) (if (closurep f) (aref f 1) f)))
 
 (defun profiler-calltree-build-unified (tree log)
   ;; Let's try to unify all those partial backtraces into a single

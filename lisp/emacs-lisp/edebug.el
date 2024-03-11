@@ -4258,7 +4258,8 @@ code location is known."
            (push new-frame results)
            (setq before-index nil
                  after-index nil))
-          (`(,(or 'lambda 'closure) . ,_)
+          ;; FIXME: Strip instrumentation from interpreted-functions?
+          (`(lambda . ,_)
 	   (unless skip-next-lambda
              (edebug--unwrap-frame new-frame)
              (edebug--add-source-info frame def-name before-index after-index)

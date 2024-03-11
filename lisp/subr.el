@@ -4517,7 +4517,8 @@ Otherwise, return nil."
 Does not distinguish between functions implemented in machine code
 or byte-code."
   (declare (side-effect-free error-free))
-  (or (subrp object) (byte-code-function-p object)))
+  (or (subrp object)
+      (byte-code-function-p object)))
 
 (defun field-at-pos (pos)
   "Return the field at position POS, taking stickiness etc into account."

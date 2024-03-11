@@ -3813,17 +3813,22 @@ stack before executing the byte-code.
 usage: (make-byte-code ARGLIST BYTE-CODE CONSTANTS DEPTH &optional DOCSTRING INTERACTIVE-SPEC &rest ELEMENTS)  */)
   (ptrdiff_t nargs, Lisp_Object *args)
 {
-  if (! ((FIXNUMP (args[COMPILED_ARGLIST])
-	  || CONSP (args[COMPILED_ARGLIST])
-	  || NILP (args[COMPILED_ARGLIST]))
-	 && STRINGP (args[COMPILED_BYTECODE])
-	 && !STRING_MULTIBYTE (args[COMPILED_BYTECODE])
-	 && VECTORP (args[COMPILED_CONSTANTS])
-	 && FIXNATP (args[COMPILED_STACK_DEPTH])))
+  if (CONSP (args[COMPILED_BYTECODE]))
+    ;                           /* An interpreted closure.  */
+  else if ((FIXNUMP (args[COMPILED_ARGLIST])
+	    || CONSP (args[COMPILED_ARGLIST])
+	    || NILP (args[COMPILED_ARGLIST]))
+	   && STRINGP (args[COMPILED_BYTECODE])
+	   && !STRING_MULTIBYTE (args[COMPILED_BYTECODE])
+	   && VECTORP (args[COMPILED_CONSTANTS])
+	   && FIXNATP (args[COMPILED_STACK_DEPTH]))
+    {
+      /* Bytecode must be immovable.  */
+      pin_string (args[COMPILED_BYTECODE]);
+    }
+  else
     error ("Invalid byte-code object");
 
-  /* Bytecode must be immovable.  */
-  pin_string (args[COMPILED_BYTECODE]);
 
   /* We used to purecopy everything here, if purify-flag was set.  This worked
      OK for Emacs-23, but with Emacs-24's lexical binding code, it can be

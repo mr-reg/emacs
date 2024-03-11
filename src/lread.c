@@ -3523,25 +3523,32 @@ bytecode_from_rev_list (Lisp_Object elems, Lisp_Object readcharfun)
         }
     }
 
-  if (!(size >= COMPILED_STACK_DEPTH + 1 && size <= COMPILED_INTERACTIVE + 1
+  if (!(size >= COMPILED_STACK_DEPTH && size <= COMPILED_INTERACTIVE + 1
 	&& (FIXNUMP (vec[COMPILED_ARGLIST])
 	    || CONSP (vec[COMPILED_ARGLIST])
 	    || NILP (vec[COMPILED_ARGLIST]))
-	&& STRINGP (vec[COMPILED_BYTECODE])
-	&& VECTORP (vec[COMPILED_CONSTANTS])
-	&& FIXNATP (vec[COMPILED_STACK_DEPTH])))
+	&& ((STRINGP (vec[COMPILED_BYTECODE]) /* Byte-code function.  */
+	     && VECTORP (vec[COMPILED_CONSTANTS])
+	     && size > COMPILED_STACK_DEPTH
+	     && (FIXNATP (vec[COMPILED_STACK_DEPTH])))
+	    || (CONSP (vec[COMPILED_BYTECODE]) /* Interpreted function.  */
+	        && (CONSP (vec[COMPILED_CONSTANTS])
+	            || NILP (vec[COMPILED_CONSTANTS]))))))
     invalid_syntax ("Invalid byte-code object", readcharfun);
 
-  if (STRING_MULTIBYTE (vec[COMPILED_BYTECODE]))
-    /* BYTESTR must have been produced by Emacs 20.2 or earlier
-       because it produced a raw 8-bit string for byte-code and
-       now such a byte-code string is loaded as multibyte with
-       raw 8-bit characters converted to multibyte form.
-       Convert them back to the original unibyte form.  */
-    vec[COMPILED_BYTECODE] = Fstring_as_unibyte (vec[COMPILED_BYTECODE]);
+  if (STRINGP (vec[COMPILED_BYTECODE]))
+    {
+      if (STRING_MULTIBYTE (vec[COMPILED_BYTECODE]))
+        /* BYTESTR must have been produced by Emacs 20.2 or earlier
+           because it produced a raw 8-bit string for byte-code and
+           now such a byte-code string is loaded as multibyte with
+           raw 8-bit characters converted to multibyte form.
+           Convert them back to the original unibyte form.  */
+        vec[COMPILED_BYTECODE] = Fstring_as_unibyte (vec[COMPILED_BYTECODE]);
 
-  /* Bytecode must be immovable.  */
-  pin_string (vec[COMPILED_BYTECODE]);
+      /* Bytecode must be immovable.  */
+      pin_string (vec[COMPILED_BYTECODE]);
+    }
 
   XSETPVECTYPE (XVECTOR (obj), PVEC_COMPILED);
   return obj;

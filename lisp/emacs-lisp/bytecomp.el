@@ -2896,10 +2896,13 @@ otherwise, print without quoting."
 
 (defun byte-compile--reify-function (fun)
   "Return an expression which will evaluate to a function value FUN.
-FUN should be an interpreted closure."
-  (pcase-let* ((`(closure ,env ,args . ,body) fun)
-               (`(,preamble . ,body) (macroexp-parse-body body))
-               (renv ()))
+FUN should be either an interpreted closure."
+  (let ((args (aref fun 0))
+        (body (aref fun 1))
+        (env (aref fun 2))
+        (docstring (function-documentation fun))
+        (iform (interactive-form fun))
+        (renv ()))
     ;; Turn the function's closed vars (if any) into local let bindings.
     (dolist (binding env)
       (cond
@@ -2907,9 +2910,10 @@ FUN should be an interpreted closure."
         (push `(,(car binding) ',(cdr binding)) renv))
        ((eq binding t))
        (t (push `(defvar ,binding) body))))
-    (if (null renv)
-        `(lambda ,args ,@preamble ,@body)
-      `(let ,renv (lambda ,args ,@preamble ,@body)))))
+    (let ((fun `(lambda ,args
+                  ,@(if docstring (list docstring))
+                  ,iform ,@body)))
+      (if (null renv) fun `(let ,renv ,fun)))))
 
 ;;;###autoload
 (defun byte-compile (form)
@@ -2936,11 +2940,11 @@ If FORM is a lambda or a macro, byte-compile it as a function."
                  (if (symbolp form) form "provided"))
         fun)
        (t
-        (when (or (symbolp form) (eq (car-safe fun) 'closure))
+        (when (or (symbolp form) (interpreted-function-p fun))
           ;; `fun' is a function *value*, so try to recover its
           ;; corresponding source code.
-          (when (setq lexical-binding (eq (car-safe fun) 'closure))
-            (setq fun (byte-compile--reify-function fun)))
+          (setq lexical-binding (not (null (aref fun 2))))
+          (setq fun (byte-compile--reify-function fun))
           (setq need-a-value t))
         ;; Expand macros.
         (setq fun (byte-compile-preprocess fun))
@@ -5542,6 +5546,8 @@ invoked interactively."
 		 (format " ==> %s" f))
 		((byte-code-function-p f)
 		 "<compiled function>")
+		((interpreted-function-p f)
+		 "<interpreted function>")
 		((not (consp f))
 		 "<malformed function>")
 		((eq 'macro (car f))
@@ -5550,11 +5556,8 @@ invoked interactively."
 			 (assq 'byte-code (cdr (cdr (cdr f)))))
 		     " <compiled macro>"
 		   " <macro>"))
-		((assq 'byte-code (cdr (cdr f)))
-		 ;; FIXME: Can this still happen?
-		 "<compiled lambda>")
 		((eq 'lambda (car f))
-		 "<function>")
+		 "<function-like list>")
 		(t "???"))
 	  (format " (%d callers + %d calls = %d)"
 		  ;; Does the optimizer eliminate common subexpressions?-sk

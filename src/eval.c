@@ -510,6 +510,32 @@ usage: (quote ARG)  */)
   return XCAR (args);
 }
 
+DEFUN ("make-interpreted-closure", Fmake_interpreted_closure,
+       Smake_interpreted_closure, 3, 5, 0,
+       doc: /* Make an interpreted closure.
+ARGS should be the list of formal arguments.
+BODY should be a non-empty list of forms.
+ENV should be a lexical environment, like the second argument of `eval'.
+IFORM if non-nil should be of the form (interactive ...).  */)
+  (Lisp_Object args, Lisp_Object body, Lisp_Object env,
+   Lisp_Object docstring, Lisp_Object iform)
+{
+  CHECK_CONS (body);          /* Make sure it's not confused with byte-code! */
+  if (!NILP (iform))
+    {
+      iform = Fcdr (iform);
+      return CALLN (Fmake_byte_code,
+                    args, body, env, Qnil, docstring,
+                    NILP (Fcdr (iform))
+                    ? Fcar (iform)
+                    : CALLN (Fvector, XCAR (iform), XCDR (iform)));
+    }
+  else if (!NILP (docstring))
+    return CALLN (Fmake_byte_code, args, body, env, Qnil, docstring);
+  else
+    return CALLN (Fmake_byte_code, args, body, env);
+}
+
 DEFUN ("function", Ffunction, Sfunction, 1, UNEVALLED, 0,
        doc: /* Like `quote', but preferred for objects which are functions.
 In byte compilation, `function' causes its argument to be handled by
@@ -525,33 +551,55 @@ usage: (function ARG)  */)
   if (!NILP (XCDR (args)))
     xsignal2 (Qwrong_number_of_arguments, Qfunction, Flength (args));
 
-  if (!NILP (Vinternal_interpreter_environment)
-      && CONSP (quoted)
+  if (CONSP (quoted)
       && EQ (XCAR (quoted), Qlambda))
     { /* This is a lambda expression within a lexical environment;
 	 return an interpreted closure instead of a simple lambda.  */
       Lisp_Object cdr = XCDR (quoted);
-      Lisp_Object tmp = cdr;
-      if (CONSP (tmp)
-	  && (tmp = XCDR (tmp), CONSP (tmp))
-	  && (tmp = XCAR (tmp), CONSP (tmp))
-	  && (EQ (QCdocumentation, XCAR (tmp))))
-	{ /* Handle the special (:documentation <form>) to build the docstring
+      Lisp_Object args = Fcar (cdr);
+      cdr = Fcdr (cdr);
+      Lisp_Object docstring = Qnil, iform = Qnil;
+      if (CONSP (cdr))
+        {
+          docstring = XCAR (cdr);
+          if (STRINGP (docstring))
+            {
+              Lisp_Object tmp = XCDR (cdr);
+              if (!NILP (tmp))
+                cdr = tmp;
+              else     /* It's not a docstring, it's a return value.  */
+                docstring = Qnil;
+            }
+          /* Handle the special (:documentation <form>) to build the docstring
 	     dynamically.  */
-	  Lisp_Object docstring = eval_sub (Fcar (XCDR (tmp)));
-	  if (SYMBOLP (docstring) && !NILP (docstring))
-	    /* Hack for OClosures: Allow the docstring to be a symbol
-             * (the OClosure's type).  */
-	    docstring = Fsymbol_name (docstring);
-	  CHECK_STRING (docstring);
-	  cdr = Fcons (XCAR (cdr), Fcons (docstring, XCDR (XCDR (cdr))));
-	}
-      if (NILP (Vinternal_make_interpreted_closure_function))
-        return Fcons (Qclosure, Fcons (Vinternal_interpreter_environment, cdr));
+          else if (CONSP (docstring)
+                   && EQ (QCdocumentation, XCAR (docstring))
+                   && (docstring = eval_sub (Fcar (XCDR (docstring))),
+                       true))
+            cdr = XCDR (cdr);
+          else
+            docstring = Qnil;   /* Not a docstring after all.  */
+        }
+      if (CONSP (cdr))
+        {
+          iform = XCAR (cdr);
+          if (CONSP (iform)
+              && EQ (Qinteractive, XCAR (iform)))
+            cdr = XCDR (cdr);
+          else
+            iform = Qnil;   /* Not an interactive-form after all.  */
+        }
+      if (NILP (cdr))
+        cdr = Fcons (Qnil, Qnil); /* Make sure the body is never empty! */
+
+      if (NILP (Vinternal_interpreter_environment)
+          || NILP (Vinternal_make_interpreted_closure_function))
+        return Fmake_interpreted_closure
+            (args, cdr, Vinternal_interpreter_environment, docstring, iform);
       else
-        return call2 (Vinternal_make_interpreted_closure_function,
-                      Fcons (Qlambda, cdr),
-                      Vinternal_interpreter_environment);
+        return call5 (Vinternal_make_interpreted_closure_function,
+                      args, cdr, Vinternal_interpreter_environment,
+                      docstring, iform);
     }
   else
     /* Simply quote the argument.  */
@@ -2949,7 +2997,7 @@ FUNCTIONP (Lisp_Object object)
   else if (CONSP (object))
     {
       Lisp_Object car = XCAR (object);
-      return EQ (car, Qlambda) || EQ (car, Qclosure);
+      return EQ (car, Qlambda);
     }
   else
     return false;
@@ -3192,10 +3240,12 @@ funcall_lambda (Lisp_Object fun, ptrdiff_t nargs,
 	 engine directly.  */
       if (FIXNUMP (syms_left))
 	return exec_byte_code (fun, XFIXNUM (syms_left), nargs, arg_vector);
-      /* Otherwise the bytecode object uses dynamic binding and the
-	 ARGLIST slot contains a standard formal argument list whose
-	 variables are bound dynamically below.  */
-      lexenv = Qnil;
+      /* Otherwise the bytecode object either is an interpreted closure
+	 or uses dynamic binding and the ARGLIST slot contains a standard
+	 formal argument list whose variables are bound dynamically below.  */
+      lexenv = CONSP (AREF (fun, COMPILED_BYTECODE))
+               ? AREF (fun, COMPILED_CONSTANTS)
+               : Qnil;
     }
 #ifdef HAVE_MODULES
   else if (MODULE_FUNCTIONP (fun))
@@ -3279,7 +3329,14 @@ funcall_lambda (Lisp_Object fun, ptrdiff_t nargs,
       val = XSUBR (fun)->function.a0 ();
     }
   else
-    val = exec_byte_code (fun, 0, 0, NULL);
+    {
+      eassert (COMPILEDP (fun));
+      val = CONSP (AREF (fun, COMPILED_BYTECODE))
+            /* Interpreted function.  */
+            ? Fprogn (AREF (fun, COMPILED_BYTECODE))
+            /* Dynbound bytecode.  */
+            : exec_byte_code (fun, 0, 0, NULL);
+    }
 
   return unbind_to (count, val);
 }
@@ -4424,6 +4481,7 @@ alist of active lexical bindings.  */);
   defsubr (&Ssetq);
   defsubr (&Squote);
   defsubr (&Sfunction);
+  defsubr (&Smake_interpreted_closure);
   defsubr (&Sdefault_toplevel_value);
   defsubr (&Sset_default_toplevel_value);
   defsubr (&Sdefvar);

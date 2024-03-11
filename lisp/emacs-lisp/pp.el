@@ -518,12 +518,6 @@ the bounds of a region containing Lisp code to pretty-print."
     ;; on a single line.
     (when doc
       (setq indent (1- doc)))
-    ;; Special-case closures -- these shouldn't really exist in actual
-    ;; source code, so there's no indentation information.  But make
-    ;; them output slightly better.
-    (when (and (not indent)
-               (eq sym 'closure))
-      (setq indent 0))
     (pp--insert "(" sym)
     (pop sexp)
     ;; Get the first entries on the first line.
