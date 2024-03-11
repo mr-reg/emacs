@@ -2830,7 +2830,7 @@ group_in_compile_stack (compile_stack_type compile_stack, regnum_t regnum)
    To guarantee termination, at each iteration, either LOOP_BEG should
    get bigger, or it should stay the same and P should get bigger.  */
 static bool
-forall_firstchar_1 (struct re_pattern_buffer *bufp, re_char *p, re_char *pend,
+forall_firstchar_1 (re_char *p, re_char *pend,
                     re_char *loop_beg, re_char *loop_end,
                     bool f (const re_char *p, void *arg), void *arg)
 {
@@ -2946,17 +2946,11 @@ forall_firstchar_1 (struct re_pattern_buffer *bufp, re_char *p, re_char *pend,
 	      {
 #if ENABLE_CHECKING
 	        fprintf (stderr, "FORALL_FIRSTCHAR: Broken assumption2!!\n");
-	        fprintf (stderr, "Destinations: %ld and %ld!!\n",
-	                 newp1 - bufp->buffer,
-	                 newp2 - bufp->buffer);
-	        fprintf (stderr, "loop_beg = %ld and loop_end = %ld!!\n",
-	                 loop_beg - bufp->buffer,
-	                 loop_end - bufp->buffer);
 #endif
 	        return false;
               }
 
-            if (!forall_firstchar_1 (bufp, newp2, pend, loop_beg, loop_end, f, arg))
+            if (!forall_firstchar_1 (newp2, pend, loop_beg, loop_end, f, arg))
               return false;
 
 	  do_jump:
@@ -3052,7 +3046,7 @@ forall_firstchar (struct re_pattern_buffer *bufp, re_char *p, re_char *pend,
 {
   eassert (!bufp || bufp->used);
   eassert (pend || bufp->used);
-  return forall_firstchar_1 (bufp, p, pend,
+  return forall_firstchar_1 (p, pend,
                              bufp ? bufp->buffer - 1 : p,
                              bufp ? bufp->buffer + bufp->used + 1 : pend,
                              f, arg);
