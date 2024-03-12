@@ -146,7 +146,7 @@
 (setf (cl--find-class 'oclosure)
       (oclosure--class-make 'oclosure
                             "The root parent of all OClosure types"
-                            nil (list (cl--find-class 'function))
+                            nil (list (cl--find-class 'closure))
                             '(oclosure)))
 (defun oclosure--p (oclosure)
   (not (not (oclosure-type oclosure))))
