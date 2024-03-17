@@ -312,10 +312,17 @@ value of last one, or nil if there are none."
                               cond '(empty-body unless) t)))
 
 (defsubst subr-primitive-p (object)
-  "Return t if OBJECT is a built-in primitive function."
+  "Return t if OBJECT is a built-in primitive written in C."
   (declare (side-effect-free error-free))
   (and (subrp object)
        (not (subr-native-elisp-p object))))
+
+(defsubst primitive-function-p (object)
+  "Return t if OBJECT is a built-in primitive function."
+  (declare (side-effect-free error-free))
+  (and (subrp object)
+       (not (or (subr-native-elisp-p object)
+                (eq (cdr (subr-arity object)) 'unevalled)))))
 
 (defsubst xor (cond1 cond2)
   "Return the boolean exclusive-or of COND1 and COND2.
