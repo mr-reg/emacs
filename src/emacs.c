@@ -1225,8 +1225,7 @@ maybe_load_seccomp (int argc, char **argv)
 
 #endif  /* SECCOMP_USABLE */
 
-int
-main (int argc, char **argv)
+int emacs_main (int argc, char **argv)
 {
   /* Variable near the bottom of the stack, and aligned appropriately
      for pointers.  */
@@ -2526,6 +2525,7 @@ Using an Emacs configured with --with-x-toolkit=lucid does not have this problem
 
   /* Enter editor command loop.  This never returns.  */
   set_initial_minibuffer_mode ();
+  init_alien_intercomm ();
   Frecursive_edit ();
   eassume (false);
 }
@@ -3611,4 +3611,9 @@ libraries; only those already known by Emacs will be loaded.  */);
   Vlibrary_cache = Qnil;
   staticpro (&Vlibrary_cache);
 #endif
+}
+
+int main (int argc, char **argv)
+{
+  emacs_main(argc, argv);
 }

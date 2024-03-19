@@ -461,3 +461,8 @@ extern int emacs_setenv_TZ (char const *);
 #else
 # define UNINIT /* empty */
 #endif
+#ifndef ALIEN_DEFINITIONS
+#define ALIEN_DEFINITIONS
+#define error rpl_error
+#define init_threads rpl_init_threads
+#endif

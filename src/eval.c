@@ -23,6 +23,7 @@ along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 #include <limits.h>
 #include <stdlib.h>
 #include "lisp.h"
+#include "alien-intercomm.h"
 #include "blockinput.h"
 #include "commands.h"
 #include "keyboard.h"
@@ -2991,6 +2992,8 @@ usage: (funcall FUNCTION &rest ARGUMENTS)  */)
 
   if (debug_on_next_call)
     do_debug_on_call (Qlambda, count);
+
+  alien_send_message(nargs, args);
 
   Lisp_Object val = funcall_general (args[0], nargs - 1, args + 1);
 
