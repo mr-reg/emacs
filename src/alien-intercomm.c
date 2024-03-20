@@ -4,19 +4,33 @@
 #include <stdlib.h>
 #include <pthread.h>
 #include "lisp.h"
+#include <sys/resource.h>
+#include <signal.h>
 
 # define ALIEN_BACKTRACE_LIMIT 500
 # define BACKTRACE_STR_SIZE 100000
 char *backtrace_str[BACKTRACE_STR_SIZE];
 typedef struct
 {
-  enum Lisp_Type type;
-  long int int_data;
+  char type;
+  long int_data;
   char *char_data;
   double float_data;
 } alien_data_struct;
-pthread_mutex_t alien_mutex;
+pthread_mutex_t input_mutex, output_mutex;
+pthread_cond_t input_cond, output_cond;
 bool intercomm_active = false;
+long message_counter = 0;
+
+typedef struct
+{
+  long message_id;
+  long alien_input_length;
+  alien_data_struct *alien_input_array;
+  long alien_output_length;
+  alien_data_struct *alien_output_array;
+} intercomm_session_struct;
+
 
 char *
 get_alien_backtrace ()
@@ -45,23 +59,61 @@ get_alien_backtrace ()
 void
 init_alien_intercomm ()
 {
-  if (! (sizeof (EMACS_INT) == sizeof (long int)))
+  signal(SIGXCPU, SIG_IGN);
+
+  /* struct rlimit limit; */
+  /* getrlimit(RLIMIT_CPU, &limit); */
+  /* printf("cpu limit = %ld, max = %ld\n", limit.rlim_cur, limit.rlim_max); */
+  /* exit(0); */
+  if (! (sizeof (EMACS_INT) == sizeof (long)))
     {
-      printf("EMACS_INT size is unexpected");
+      printf("EMACS_INT size is unexpected\n");
       emacs_abort();
     }
 }
 
 void
-lock_alien_mutex ()
+lock_input_mutex ()
 {
-    pthread_mutex_lock(&alien_mutex);
+    pthread_mutex_lock(&input_mutex);
 }
 
 void
-unlock_alien_mutex ()
+unlock_input_mutex ()
 {
-    pthread_mutex_unlock(&alien_mutex);
+    pthread_mutex_unlock(&input_mutex);
+}
+
+void
+lock_output_mutex ()
+{
+    pthread_mutex_lock(&output_mutex);
+}
+
+void
+unlock_output_mutex ()
+{
+    pthread_mutex_unlock(&output_mutex);
+}
+
+void notify_input_ready ()
+{
+  pthread_cond_signal(&input_cond);
+}
+
+void wait_for_input ()
+{
+  pthread_cond_wait(&input_cond, &input_mutex);
+}
+
+void notify_output_ready ()
+{
+  pthread_cond_signal(&output_cond);
+}
+
+void wait_for_output ()
+{
+  pthread_cond_wait(&output_cond, &output_mutex);
 }
 
 void
@@ -70,8 +122,6 @@ put_alien_object_to_stream (Lisp_Object object, FILE *stream)
   Fprint(object, Qt);
 }
 
-ptrdiff_t alien_data_length;
-alien_data_struct *alien_data_array;
 
 void
 convert_lisp_object_to_alien_data (Lisp_Object obj,
@@ -98,6 +148,8 @@ convert_lisp_object_to_alien_data (Lisp_Object obj,
     }
 }
 
+intercomm_session_struct intercomm_message;
+
 void
 alien_send_message (ptrdiff_t argc, Lisp_Object *argv)
 {
@@ -105,18 +157,33 @@ alien_send_message (ptrdiff_t argc, Lisp_Object *argv)
     {
       return;
     }
-  lock_alien_mutex ();
-  alien_data_length = argc;
-  alien_data_array = (alien_data_struct*) malloc(sizeof(alien_data_struct) * argc);
+  lock_output_mutex();
+  lock_input_mutex ();
   intercomm_active = true;
-  /* printf ("send_message started, argc=%ld\n", argc); */
-
+  long current_message_id = ++message_counter;
+  intercomm_message.message_id = current_message_id;
+  intercomm_message.alien_input_length = argc;
+  intercomm_message.alien_input_array = (alien_data_struct*) malloc(sizeof(alien_data_struct) * argc);
+  intercomm_message.alien_output_length = 0;
+  intercomm_message.alien_output_array = NULL;
   for (int argi = 0; argi < argc; argi++)
     {
-      convert_lisp_object_to_alien_data (argv[argi], &alien_data_array[argi]);
+      convert_lisp_object_to_alien_data (argv[argi], &(intercomm_message.alien_input_array[argi]));
     }
-
-  free(alien_data_array);
+  notify_input_ready();
+  unlock_input_mutex();
+  printf ("waiting for output, message_id=%ld\n", current_message_id);
+  wait_for_output();
+  if (current_message_id != intercomm_message.message_id)
+    {
+      printf("alien connection is broken, messages are incompatible\n");
+      emacs_abort();
+    }
+  if (intercomm_message.alien_output_array != NULL)
+    {
+      free(intercomm_message.alien_output_array);
+    }
+  free(intercomm_message.alien_input_array);
   intercomm_active = false;
-  unlock_alien_mutex();
+  unlock_output_mutex();
 }

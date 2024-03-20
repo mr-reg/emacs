@@ -465,4 +465,6 @@ extern int emacs_setenv_TZ (char const *);
 #define ALIEN_DEFINITIONS
 #define error rpl_error
 #define init_threads rpl_init_threads
+#define init_macros rpl_init_macros
+#define init_alloc rpl_init_alloc
 #endif
