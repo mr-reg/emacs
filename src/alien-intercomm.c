@@ -2,10 +2,10 @@
 #include <execinfo.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <pthread.h>
 #include "lisp.h"
 #include <sys/resource.h>
 #include <signal.h>
+#include <threads.h>
 
 # define ALIEN_BACKTRACE_LIMIT 500
 # define BACKTRACE_STR_SIZE 100000
@@ -17,11 +17,12 @@ typedef struct
   char *char_data;
   double float_data;
 } alien_data_struct;
-pthread_mutex_t input_mutex, output_mutex;
-pthread_cond_t input_cond, output_cond;
-bool intercomm_active = false;
+mtx_t emacs_mutex;
+/* mtx_t common_lisp_mutex; */
+/* cnd_t emacs_cond, common_lisp_cond; */
+/* int common_lisp_active = 0; */
 long message_counter = 0;
-
+sig_atomic_t marker = 0;
 typedef struct
 {
   long message_id;
@@ -56,65 +57,62 @@ get_alien_backtrace ()
   return (char*)backtrace_str;
 }
 
-void
-init_alien_intercomm ()
-{
-  signal(SIGXCPU, SIG_IGN);
 
-  /* struct rlimit limit; */
-  /* getrlimit(RLIMIT_CPU, &limit); */
-  /* printf("cpu limit = %ld, max = %ld\n", limit.rlim_cur, limit.rlim_max); */
-  /* exit(0); */
-  if (! (sizeof (EMACS_INT) == sizeof (long)))
-    {
-      printf("EMACS_INT size is unexpected\n");
-      emacs_abort();
-    }
-}
+/* void */
+/* lock_common_lisp_mutex () */
+/* { */
+/*   printf("TRY_LOCK common_lisp_mutex by thread %ld\n", thrd_current ()); */
+/*   mtx_lock(&common_lisp_mutex); */
+/*   printf("LOCKED   common_lisp_mutex %ld\n", thrd_current ()); */
+/* } */
 
-void
-lock_input_mutex ()
-{
-    pthread_mutex_lock(&input_mutex);
-}
+/* void */
+/* unlock_common_lisp_mutex () */
+/* { */
+/*   printf("UNLOCK   common_lisp_mutex %ld\n", thrd_current ()); */
+/*   mtx_unlock(&common_lisp_mutex); */
+/* } */
 
 void
-unlock_input_mutex ()
+lock_emacs_mutex ()
 {
-    pthread_mutex_unlock(&input_mutex);
+  printf("TRY_LOCK emacs_mutex %ld\n", thrd_current ());
+  mtx_lock(&emacs_mutex);
+  printf("LOCKED   emacs_mutex %ld\n", thrd_current ());
 }
 
 void
-lock_output_mutex ()
+unlock_emacs_mutex ()
 {
-    pthread_mutex_lock(&output_mutex);
+  printf("UNLOCK   emacs_mutex %ld\n", thrd_current ());
+  mtx_unlock(&emacs_mutex);
 }
 
-void
-unlock_output_mutex ()
-{
-    pthread_mutex_unlock(&output_mutex);
-}
+/* void notify_emacs_cond () */
+/* { */
+/*   printf("NOTIFY   emacs_mutex %ld\n", thrd_current ()); */
+/*   cnd_signal(&emacs_cond); */
+/* } */
 
-void notify_input_ready ()
-{
-  pthread_cond_signal(&input_cond);
-}
+/* void wait_for_emacs_cond () */
+/* { */
+/*   printf("WAITSTRT emacs_mutex %ld\n", thrd_current ()); */
+/*   cnd_wait(&emacs_cond, &emacs_mutex); */
+/*   printf("WAITEND  emacs_mutex %ld\n", thrd_current ()); */
+/* } */
 
-void wait_for_input ()
-{
-  pthread_cond_wait(&input_cond, &input_mutex);
-}
+/* void notify_common_lisp_cond () */
+/* { */
+/*   printf("NOTIFY   common_lisp_mutex %ld\n", thrd_current ()); */
+/*   cnd_signal(&common_lisp_cond); */
+/* } */
 
-void notify_output_ready ()
-{
-  pthread_cond_signal(&output_cond);
-}
-
-void wait_for_output ()
-{
-  pthread_cond_wait(&output_cond, &output_mutex);
-}
+/* void wait_for_common_lisp_cond () */
+/* { */
+/*   printf("WAITSTRT common_lisp_mutex %ld\n", thrd_current ()); */
+/*   cnd_wait(&common_lisp_cond, &common_lisp_mutex); */
+/*   printf("WAITEND  common_lisp_mutex %ld\n", thrd_current ()); */
+/* } */
 
 void
 put_alien_object_to_stream (Lisp_Object object, FILE *stream)
@@ -122,6 +120,25 @@ put_alien_object_to_stream (Lisp_Object object, FILE *stream)
   Fprint(object, Qt);
 }
 
+void
+init_alien_intercomm ()
+{
+  signal(SIGXCPU, SIG_IGN);
+  if (! (sizeof (EMACS_INT) == sizeof (long)))
+    {
+      printf("EMACS_INT size is unexpected %ld\n", thrd_current ());
+      emacs_abort();
+    }
+  /* if (common_lisp_active == 0) */
+  /*   { */
+  /*     wait_for_emacs_cond (); */
+  /*     if (common_lisp_active == 0) */
+  /* 	{ */
+  /* 	  printf("common_lisp_active status error %ld\n", thrd_current ()); */
+  /* 	  emacs_abort(); */
+  /* 	} */
+  /*   } */
+}
 
 void
 convert_lisp_object_to_alien_data (Lisp_Object obj,
@@ -153,37 +170,48 @@ intercomm_session_struct intercomm_message;
 void
 alien_send_message (ptrdiff_t argc, Lisp_Object *argv)
 {
-  if (intercomm_active)
+  if (marker > 0)
     {
+      printf("alien_send_message while inside intercomm %ld\n", thrd_current ());
       return;
     }
-  lock_output_mutex();
-  lock_input_mutex ();
-  intercomm_active = true;
+  lock_emacs_mutex();
+  marker = 1;
   long current_message_id = ++message_counter;
-  intercomm_message.message_id = current_message_id;
-  intercomm_message.alien_input_length = argc;
-  intercomm_message.alien_input_array = (alien_data_struct*) malloc(sizeof(alien_data_struct) * argc);
-  intercomm_message.alien_output_length = 0;
-  intercomm_message.alien_output_array = NULL;
-  for (int argi = 0; argi < argc; argi++)
+  printf("emacs message id %ld\n", current_message_id);
+  memset(&intercomm_message, 0, sizeof(intercomm_session_struct));
+  if (argc > 0 && SYMBOLP(argv[0]) )
     {
-      convert_lisp_object_to_alien_data (argv[argi], &(intercomm_message.alien_input_array[argi]));
+      printf ("symbol %s\n", SSDATA (SYMBOL_NAME (argv[0])));
     }
-  notify_input_ready();
-  unlock_input_mutex();
+  intercomm_message.message_id = current_message_id;
+  /* intercomm_message.alien_input_length = argc; */
+  /* intercomm_message.alien_input_array = (alien_data_struct*) malloc(sizeof(alien_data_struct) * argc); */
+  /* intercomm_message.alien_output_length = 0; */
+  /* intercomm_message.alien_output_array = NULL; */
+  /* for (int argi = 0; argi < argc; argi++) */
+  /*   { */
+  /*     convert_lisp_object_to_alien_data (argv[argi], &(intercomm_message.alien_input_array[argi])); */
+  /*   } */
+  unlock_emacs_mutex();
   printf ("waiting for output, message_id=%ld\n", current_message_id);
-  wait_for_output();
+  while (marker == 1)
+    {
+      usleep(1);
+    }
+  lock_emacs_mutex();
+  printf ("output received, message_id=%ld\n", intercomm_message.message_id);
   if (current_message_id != intercomm_message.message_id)
     {
-      printf("alien connection is broken, messages are incompatible\n");
+      printf("alien connection is broken, messages are incompatible %ld\n", thrd_current ());
       emacs_abort();
     }
-  if (intercomm_message.alien_output_array != NULL)
-    {
-      free(intercomm_message.alien_output_array);
-    }
-  free(intercomm_message.alien_input_array);
-  intercomm_active = false;
-  unlock_output_mutex();
+  marker = 0;
+  unlock_emacs_mutex();
+
+  /* if (intercomm_message.alien_output_array != NULL) */
+  /*   { */
+  /*     free(intercomm_message.alien_output_array); */
+  /*   } */
+  /* free(intercomm_message.alien_input_array); */
 }
