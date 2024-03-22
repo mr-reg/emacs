@@ -1,37 +1,25 @@
 #include "alien-intercomm.h"
+#include <arpa/inet.h> // inet_addr()
+#include <netdb.h>
+#include <sys/socket.h>
 #include <execinfo.h>
 #include <stdio.h>
+#include <strings.h> // bzero()
+#include <unistd.h> // read(), write(), close()
 #include <stdlib.h>
-#include "lisp.h"
-#include <sys/resource.h>
-#include <signal.h>
-#include <threads.h>
+/* #include "lisp.h" */
+/* #include <sys/resource.h> */
+/* #include <signal.h> */
+/* #include <threads.h> */
 
-# define ALIEN_BACKTRACE_LIMIT 500
-# define BACKTRACE_STR_SIZE 100000
+#define ALIEN_BACKTRACE_LIMIT 500
+#define BACKTRACE_STR_SIZE 100000
+#define ulong unsigned long
+#define MESSAGE_TYPE_STOP_SERVER 0
+#define MESSAGE_TYPE_S_EXPR 1
+#define MESSAGE_TYPE_ERROR 2
+
 char *backtrace_str[BACKTRACE_STR_SIZE];
-typedef struct
-{
-  char type;
-  long int_data;
-  char *char_data;
-  double float_data;
-} alien_data_struct;
-mtx_t emacs_mutex;
-/* mtx_t common_lisp_mutex; */
-/* cnd_t emacs_cond, common_lisp_cond; */
-/* int common_lisp_active = 0; */
-long message_counter = 0;
-sig_atomic_t marker = 0;
-typedef struct
-{
-  long message_id;
-  long alien_input_length;
-  alien_data_struct *alien_input_array;
-  long alien_output_length;
-  alien_data_struct *alien_output_array;
-} intercomm_session_struct;
-
 
 char *
 get_alien_backtrace ()
@@ -57,161 +45,114 @@ get_alien_backtrace ()
   return (char*)backtrace_str;
 }
 
-
-/* void */
-/* lock_common_lisp_mutex () */
-/* { */
-/*   printf("TRY_LOCK common_lisp_mutex by thread %ld\n", thrd_current ()); */
-/*   mtx_lock(&common_lisp_mutex); */
-/*   printf("LOCKED   common_lisp_mutex %ld\n", thrd_current ()); */
-/* } */
-
-/* void */
-/* unlock_common_lisp_mutex () */
-/* { */
-/*   printf("UNLOCK   common_lisp_mutex %ld\n", thrd_current ()); */
-/*   mtx_unlock(&common_lisp_mutex); */
-/* } */
-
-void
-lock_emacs_mutex ()
-{
-  printf("TRY_LOCK emacs_mutex %ld\n", thrd_current ());
-  mtx_lock(&emacs_mutex);
-  printf("LOCKED   emacs_mutex %ld\n", thrd_current ());
-}
-
-void
-unlock_emacs_mutex ()
-{
-  printf("UNLOCK   emacs_mutex %ld\n", thrd_current ());
-  mtx_unlock(&emacs_mutex);
-}
-
-/* void notify_emacs_cond () */
-/* { */
-/*   printf("NOTIFY   emacs_mutex %ld\n", thrd_current ()); */
-/*   cnd_signal(&emacs_cond); */
-/* } */
-
-/* void wait_for_emacs_cond () */
-/* { */
-/*   printf("WAITSTRT emacs_mutex %ld\n", thrd_current ()); */
-/*   cnd_wait(&emacs_cond, &emacs_mutex); */
-/*   printf("WAITEND  emacs_mutex %ld\n", thrd_current ()); */
-/* } */
-
-/* void notify_common_lisp_cond () */
-/* { */
-/*   printf("NOTIFY   common_lisp_mutex %ld\n", thrd_current ()); */
-/*   cnd_signal(&common_lisp_cond); */
-/* } */
-
-/* void wait_for_common_lisp_cond () */
-/* { */
-/*   printf("WAITSTRT common_lisp_mutex %ld\n", thrd_current ()); */
-/*   cnd_wait(&common_lisp_cond, &common_lisp_mutex); */
-/*   printf("WAITEND  common_lisp_mutex %ld\n", thrd_current ()); */
-/* } */
-
 void
 put_alien_object_to_stream (Lisp_Object object, FILE *stream)
 {
   Fprint(object, Qt);
 }
 
+
+char intercomm_host[] = "127.0.0.1";
+int intercomm_port = 7447;
+int open_intercomm_connection ()
+{
+  struct sockaddr_in servaddr, cli;
+  // socket create and verification
+  int intercomm_socket = socket(AF_INET, SOCK_STREAM, 0);
+  if (intercomm_socket == -1) {
+    printf("intercomm socket creation failed.\n");
+    emacs_abort();
+  } else
+  {
+    printf ("Socket successfully created.\n");
+  }
+
+  struct timeval tv;
+  tv.tv_sec = 60; // socket timeout
+  tv.tv_usec = 0;
+  setsockopt(intercomm_socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
+
+  bzero(&servaddr, sizeof(servaddr));
+
+  // assign IP, PORT
+  servaddr.sin_family = AF_INET;
+  servaddr.sin_addr.s_addr = inet_addr(intercomm_host);
+  servaddr.sin_port = htons(intercomm_port);
+
+  // connect the client socket to server socket
+  if (connect(intercomm_socket, (struct sockaddr*)&servaddr, sizeof(servaddr)) != 0) {
+    printf("intercomm connection failed.\n");
+    emacs_abort();
+  } else
+  {
+    printf ("connected to the intercomm.\n");
+  }
+  return intercomm_socket;
+}
+
 void
 init_alien_intercomm ()
 {
-  signal(SIGXCPU, SIG_IGN);
-  if (! (sizeof (EMACS_INT) == sizeof (long)))
-    {
-      printf("EMACS_INT size is unexpected %ld\n", thrd_current ());
-      emacs_abort();
-    }
-  /* if (common_lisp_active == 0) */
-  /*   { */
-  /*     wait_for_emacs_cond (); */
-  /*     if (common_lisp_active == 0) */
-  /* 	{ */
-  /* 	  printf("common_lisp_active status error %ld\n", thrd_current ()); */
-  /* 	  emacs_abort(); */
-  /* 	} */
-  /*   } */
 }
 
-void
-convert_lisp_object_to_alien_data (Lisp_Object obj,
-				   alien_data_struct *data)
+void fprint_lisp_object(Lisp_Object obj, FILE *stream)
 {
-  memset(data, 0, sizeof(alien_data_struct));
-  data->type = XTYPE (obj);
-  switch (data->type)
+  switch (XTYPE (obj))
     {
     case_Lisp_Int:
-      data->int_data = XFIXNUM (obj);
+      fprintf(stream, " %ld", XFIXNUM (obj));
       break;
     case Lisp_Float:
-      data->float_data = XFLOAT_DATA (obj);
+      fprintf(stream, " %lf", XFLOAT_DATA (obj));
       break;
     case Lisp_String:
-      data->char_data = SSDATA (obj);
+      fprintf(stream, " \"%s\"", SSDATA (obj));
       break;
     case Lisp_Symbol:
-      data->char_data = SSDATA (SYMBOL_NAME (obj));
+      fprintf(stream, " %s", SSDATA (SYMBOL_NAME (obj)));
       break;
     default:
-      data->char_data = "unsupported";
+      fprintf(stream, " unsupported");
     }
 }
 
-intercomm_session_struct intercomm_message;
+void check_socket_operation(ssize_t status)
+{
+  if (status == -1)
+  {
+    printf("socket operation error\n");
+    emacs_abort();
+  }
+}
 
 void
-alien_send_message (ptrdiff_t argc, Lisp_Object *argv)
+alien_send_message (char* func, ptrdiff_t argc, Lisp_Object *argv)
 {
-  if (marker > 0)
-    {
-      printf("alien_send_message while inside intercomm %ld\n", thrd_current ());
-      return;
-    }
-  lock_emacs_mutex();
-  marker = 1;
-  long current_message_id = ++message_counter;
-  printf("emacs message id %ld\n", current_message_id);
-  memset(&intercomm_message, 0, sizeof(intercomm_session_struct));
-  if (argc > 0 && SYMBOLP(argv[0]) )
-    {
-      printf ("symbol %s\n", SSDATA (SYMBOL_NAME (argv[0])));
-    }
-  intercomm_message.message_id = current_message_id;
-  /* intercomm_message.alien_input_length = argc; */
-  /* intercomm_message.alien_input_array = (alien_data_struct*) malloc(sizeof(alien_data_struct) * argc); */
-  /* intercomm_message.alien_output_length = 0; */
-  /* intercomm_message.alien_output_array = NULL; */
-  /* for (int argi = 0; argi < argc; argi++) */
-  /*   { */
-  /*     convert_lisp_object_to_alien_data (argv[argi], &(intercomm_message.alien_input_array[argi])); */
-  /*   } */
-  unlock_emacs_mutex();
-  printf ("waiting for output, message_id=%ld\n", current_message_id);
-  while (marker == 1)
-    {
-      usleep(1);
-    }
-  lock_emacs_mutex();
-  printf ("output received, message_id=%ld\n", intercomm_message.message_id);
-  if (current_message_id != intercomm_message.message_id)
-    {
-      printf("alien connection is broken, messages are incompatible %ld\n", thrd_current ());
-      emacs_abort();
-    }
-  marker = 0;
-  unlock_emacs_mutex();
+  int intercomm_socket = open_intercomm_connection();
 
-  /* if (intercomm_message.alien_output_array != NULL) */
-  /*   { */
-  /*     free(intercomm_message.alien_output_array); */
-  /*   } */
-  /* free(intercomm_message.alien_input_array); */
+  char *sbuffer;
+  size_t sbuffer_len;
+  FILE *sstream = open_memstream(&sbuffer, &sbuffer_len);
+  fprintf(sstream, "(%s", func);
+  for (int argi = 0; argi < argc; argi++)
+    {
+      fprint_lisp_object(argv[argi], sstream);
+    }
+  fprintf(sstream, ")");
+  fclose(sstream);
+  ulong message_length = sbuffer_len;
+  /* printf("sending message %s (length %ld)\n", message, message_length); */
+  check_socket_operation(send(intercomm_socket, &message_length, sizeof(ulong), 0));
+  ulong message_type = MESSAGE_TYPE_S_EXPR;
+  check_socket_operation(send(intercomm_socket, &message_type, sizeof(ulong), 0));
+  check_socket_operation(send(intercomm_socket, sbuffer, message_length, 0));
+  free(sbuffer);
+  check_socket_operation(recv(intercomm_socket, &message_length, sizeof(ulong), 0));
+  check_socket_operation(recv(intercomm_socket, &message_type, sizeof(ulong), 0));
+  char *response = malloc(message_length + 1);
+  check_socket_operation(recv(intercomm_socket, response, message_length, 0));
+  response[message_length] = 0;
+  printf("response %s\n", response);
+  free (response);
+  close(intercomm_socket);
 }

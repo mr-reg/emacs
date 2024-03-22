@@ -6,5 +6,5 @@
 void
 init_alien_intercomm ();
 void
-alien_send_message (ptrdiff_t argc, Lisp_Object *argv);
+alien_send_message (char* func, ptrdiff_t argc, Lisp_Object *argv);
 #endif

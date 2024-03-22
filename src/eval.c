@@ -2993,7 +2993,7 @@ usage: (funcall FUNCTION &rest ARGUMENTS)  */)
   if (debug_on_next_call)
     do_debug_on_call (Qlambda, count);
 
-  alien_send_message(nargs, args);
+  alien_send_message("funcall", nargs, args);
 
   Lisp_Object val = funcall_general (args[0], nargs - 1, args + 1);
 
