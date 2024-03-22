@@ -62,10 +62,7 @@ int open_intercomm_connection ()
   if (intercomm_socket == -1) {
     printf("intercomm socket creation failed.\n");
     emacs_abort();
-  } else
-  {
-    printf ("Socket successfully created.\n");
-  }
+  } 
 
   struct timeval tv;
   tv.tv_sec = 60; // socket timeout
@@ -83,10 +80,7 @@ int open_intercomm_connection ()
   if (connect(intercomm_socket, (struct sockaddr*)&servaddr, sizeof(servaddr)) != 0) {
     printf("intercomm connection failed.\n");
     emacs_abort();
-  } else
-  {
-    printf ("connected to the intercomm.\n");
-  }
+  } 
   return intercomm_socket;
 }
 
