@@ -2356,6 +2356,7 @@ LEXICAL can also be an actual lexical environment, in the form of an
 alist mapping symbols to their value.  */)
   (Lisp_Object form, Lisp_Object lexical)
 {
+  alien_send_message2 ("eval", form, lexical );
   specpdl_ref count = SPECPDL_INDEX ();
   specbind (Qinternal_interpreter_environment,
 	    CONSP (lexical) || NILP (lexical) ? lexical : list1 (Qt));
@@ -2992,8 +2993,6 @@ usage: (funcall FUNCTION &rest ARGUMENTS)  */)
 
   if (debug_on_next_call)
     do_debug_on_call (Qlambda, count);
-
-  alien_send_message("funcall", nargs, args);
 
   Lisp_Object val = funcall_general (args[0], nargs - 1, args + 1);
 

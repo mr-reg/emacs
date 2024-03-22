@@ -16,7 +16,7 @@
 #define BACKTRACE_STR_SIZE 100000
 #define ulong unsigned long
 #define MESSAGE_TYPE_STOP_SERVER 0
-#define MESSAGE_TYPE_S_EXPR 1
+#define MESSAGE_TYPE_NOTIFY_S_EXPR 1
 #define MESSAGE_TYPE_ERROR 2
 
 char *backtrace_str[BACKTRACE_STR_SIZE];
@@ -94,19 +94,43 @@ void fprint_lisp_object(Lisp_Object obj, FILE *stream)
   switch (XTYPE (obj))
     {
     case_Lisp_Int:
-      fprintf(stream, " %ld", XFIXNUM (obj));
-      break;
+    {
+	fprintf (stream, " %ld", XFIXNUM (obj));
+    }
+    break;
     case Lisp_Float:
-      fprintf(stream, " %lf", XFLOAT_DATA (obj));
-      break;
+    {
+	fprintf (stream, " %lf", XFLOAT_DATA (obj));
+    }
+    break;
     case Lisp_String:
-      fprintf(stream, " \"%s\"", SSDATA (obj));
-      break;
+    {
+	fprintf (stream, " \"%s\"", SSDATA (obj));
+    }
+    break;
     case Lisp_Symbol:
-      fprintf(stream, " %s", SSDATA (SYMBOL_NAME (obj)));
-      break;
+    {
+	fprintf (stream, " '%s", SSDATA (SYMBOL_NAME (obj)));
+    }
+    break;
+    case Lisp_Cons:
+    {
+	fprintf (stream, " (cons");
+	fprint_lisp_object (XCAR (obj), stream);
+	fprint_lisp_object (XCDR (obj), stream);
+	fprintf (stream, ")");
+    }
+    break;
+    case Lisp_Vectorlike:
+    {
+	enum pvec_type vector_type
+	  = PSEUDOVECTOR_TYPE (XVECTOR (obj));
+	fprintf (stream, " \"unsupported vector type %d\"",
+		 vector_type);
+    }
+    break;
     default:
-      fprintf(stream, " unsupported");
+      fprintf(stream, " 'unsupported");
     }
 }
 
@@ -133,11 +157,12 @@ alien_send_message (char* func, ptrdiff_t argc, Lisp_Object *argv)
       fprint_lisp_object(argv[argi], sstream);
     }
   fprintf(sstream, ")");
+  /* fprintf(sstream, "#|%s|#", get_alien_backtrace()); */
   fclose(sstream);
   ulong message_length = sbuffer_len;
   /* printf("sending message %s (length %ld)\n", message, message_length); */
   check_socket_operation(send(intercomm_socket, &message_length, sizeof(ulong), 0));
-  ulong message_type = MESSAGE_TYPE_S_EXPR;
+  ulong message_type = MESSAGE_TYPE_NOTIFY_S_EXPR;
   check_socket_operation(send(intercomm_socket, &message_type, sizeof(ulong), 0));
   check_socket_operation(send(intercomm_socket, sbuffer, message_length, 0));
   free(sbuffer);
@@ -146,7 +171,55 @@ alien_send_message (char* func, ptrdiff_t argc, Lisp_Object *argv)
   char *response = malloc(message_length + 1);
   check_socket_operation(recv(intercomm_socket, response, message_length, 0));
   response[message_length] = 0;
-  printf("response %s\n", response);
+  /* printf("response %s\n", response); */
   free (response);
   close(intercomm_socket);
+}
+
+void alien_send_message0(char* func)
+{
+  Lisp_Object alien_data[] = {  };
+  alien_send_message(func, 0, alien_data);
+}
+
+void alien_send_message1(char* func, Lisp_Object arg0)
+{
+  Lisp_Object alien_data[] = { arg0 };
+  alien_send_message(func, 1, alien_data);
+}
+
+void alien_send_message2(char* func, Lisp_Object arg0, Lisp_Object arg1)
+{
+  Lisp_Object alien_data[] = { arg0, arg1 };
+  alien_send_message(func, 2, alien_data);
+}
+
+void alien_send_message3(char* func, Lisp_Object arg0, Lisp_Object arg1, Lisp_Object arg2)
+{
+  Lisp_Object alien_data[] = { arg0, arg1, arg2 };
+  alien_send_message(func, 3, alien_data);
+}
+
+void alien_send_message4(char* func, Lisp_Object arg0, Lisp_Object arg1, Lisp_Object arg2, Lisp_Object arg3)
+{
+  Lisp_Object alien_data[] = { arg0, arg1, arg2, arg3 };
+  alien_send_message(func, 4, alien_data);
+}
+
+void alien_send_message5(char* func, Lisp_Object arg0, Lisp_Object arg1, Lisp_Object arg2, Lisp_Object arg3, Lisp_Object arg4)
+{
+  Lisp_Object alien_data[] = { arg0, arg1, arg2, arg3, arg4 };
+  alien_send_message(func, 5, alien_data);
+}
+
+void alien_send_message6(char* func, Lisp_Object arg0, Lisp_Object arg1, Lisp_Object arg2, Lisp_Object arg3, Lisp_Object arg4, Lisp_Object arg5)
+{
+  Lisp_Object alien_data[] = { arg0, arg1, arg2, arg3, arg4, arg5 };
+  alien_send_message(func, 6, alien_data);
+}
+
+void alien_send_message7(char* func, Lisp_Object arg0, Lisp_Object arg1, Lisp_Object arg2, Lisp_Object arg3, Lisp_Object arg4, Lisp_Object arg5, Lisp_Object arg6)
+{
+  Lisp_Object alien_data[] = { arg0, arg1, arg2, arg3, arg4, arg5, arg6 };
+  alien_send_message(func, 7, alien_data);
 }

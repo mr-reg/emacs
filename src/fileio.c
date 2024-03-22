@@ -24,6 +24,7 @@ along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include "alien-intercomm.h"
 
 #ifdef DARWIN_OS
 #include <sys/attr.h>
@@ -292,7 +293,8 @@ any handlers that are members of `inhibit-file-name-handlers',
 but still do run any other handlers.  This lets handlers
 use the standard functions without calling themselves recursively.  */)
   (Lisp_Object filename, Lisp_Object operation)
-{
+{ 
+  alien_send_message2 ("find-file-name-handler", filename, operation);
   /* This function must not munge the match data.  */
   Lisp_Object chain, inhibited_handlers, result;
   ptrdiff_t pos = -1;
@@ -349,6 +351,7 @@ Otherwise return a directory name.
 Given a Unix syntax file name, returns a string ending in slash.  */)
   (Lisp_Object filename)
 {
+  alien_send_message1 ("file-name-directory", filename);
   Lisp_Object handler;
 
   CHECK_STRING (filename);
@@ -452,6 +455,7 @@ this is everything after the last slash,
 or the entire name if it contains no slash.  */)
   (Lisp_Object filename)
 {
+  alien_send_message1 ("file-name-nondirectory", filename );
   register const char *beg, *p, *end;
   Lisp_Object handler;
 
@@ -498,6 +502,7 @@ The `call-process' and `start-process' functions use this function to
 get a current directory to run processes in.  */)
   (Lisp_Object filename)
 {
+  alien_send_message1 ("unhandled-file-name-directory", filename );
   Lisp_Object handler;
 
   /* If the file name has special constructs in it,
@@ -555,6 +560,7 @@ For a Unix-syntax file name, just appends a slash unless a trailing slash
 is already present.  */)
   (Lisp_Object file)
 {
+  alien_send_message1 ("file-name-as-directory", file );
   char *buf;
   ptrdiff_t length;
   Lisp_Object handler, val;
@@ -617,6 +623,7 @@ DEFUN ("directory-name-p", Fdirectory_name_p, Sdirectory_name_p, 1, 1, 0,
        doc: /* Return non-nil if NAME ends with a directory separator character.  */)
   (Lisp_Object name)
 {
+  alien_send_message1 ("directory-name-p", name );
   CHECK_STRING (name);
   ptrdiff_t namelen = SBYTES (name);
   unsigned char c = namelen ? SREF (name, namelen - 1) : 0;
@@ -646,6 +653,7 @@ a directory is different from its name as a file.
 In Unix-syntax, this function just removes the final slash.  */)
   (Lisp_Object directory)
 {
+  alien_send_message1 ("directory-file-name", directory );
   char *buf;
   ptrdiff_t length;
   Lisp_Object handler, val;
@@ -693,6 +701,7 @@ This function does not grok magic file names.  */)
   (Lisp_Object prefix, Lisp_Object dir_flag, Lisp_Object suffix,
    Lisp_Object text)
 {
+  alien_send_message4 ("make-temp-file-internal", prefix, dir_flag, suffix, text );
   CHECK_STRING (prefix);
   CHECK_STRING (suffix);
   Lisp_Object encoded_prefix = ENCODE_FILE (prefix);
@@ -749,6 +758,7 @@ later creating the file, which opens all kinds of security holes.
 For that reason, you should normally use `make-temp-file' instead.  */)
   (Lisp_Object prefix)
 {
+  alien_send_message1 ("make-temp-name", prefix );
   return Fmake_temp_file_internal (prefix, make_fixnum (0),
 				   empty_unibyte_string, Qnil);
 }
@@ -762,6 +772,7 @@ inserted before contatenating.
 usage: (record DIRECTORY &rest COMPONENTS) */)
   (ptrdiff_t nargs, Lisp_Object *args)
 {
+  alien_send_message ("file-name-concat", nargs, args);
   ptrdiff_t chars = 0, bytes = 0, multibytes = 0, eargs = 0;
   Lisp_Object *elements = args;
   Lisp_Object result;
@@ -927,6 +938,7 @@ sure DIRNAME in this example doesn't end in a slash, unless it's
 the root directory.  */)
   (Lisp_Object name, Lisp_Object default_directory)
 {
+  alien_send_message2 ("expand-file-name", name, default_directory );
   /* These point to SDATA and need to be careful with string-relocation
      during GC (via DECODE_FILE).  */
   char *nm;
@@ -1663,6 +1675,9 @@ the root directory.  */)
     }
 
   SAFE_FREE ();
+  
+  alien_send_message1 ("expand-file-name/result", result);
+
   return result;
 }
 
@@ -1690,6 +1705,7 @@ See also the function `substitute-in-file-name'.")
      (name, defalt)
      Lisp_Object name, defalt;
 {
+  alien_send_message2 ("expand-file-name", name, defalt );
   unsigned char *nm;
 
   register unsigned char *newdir, *p, *o;
@@ -1956,6 +1972,7 @@ If `//' appears, everything up to and including the first of
 those `/' is discarded.  */)
   (Lisp_Object filename)
 {
+  alien_send_message1 ("substitute-in-file-name", filename );
   char *nm, *p, *x, *endp;
   bool substituted = false;
   bool multibyte;
@@ -2164,6 +2181,9 @@ permissions.  */)
    Lisp_Object keep_time, Lisp_Object preserve_uid_gid,
    Lisp_Object preserve_permissions)
 {
+  alien_send_message6 ("copy-file", file, newname, ok_if_already_exists,
+		       keep_time, preserve_uid_gid, preserve_permissions );
+
   Lisp_Object handler;
   specpdl_ref count = SPECPDL_INDEX ();
   Lisp_Object encoded_file, encoded_newname;
@@ -2426,6 +2446,7 @@ DEFUN ("make-directory-internal", Fmake_directory_internal,
        doc: /* Create a new directory named DIRECTORY.  */)
   (Lisp_Object directory)
 {
+  alien_send_message1 ("make-directory-internal", directory );
   const char *dir;
   Lisp_Object encoded_dir;
 
@@ -2447,6 +2468,7 @@ DEFUN ("delete-directory-internal", Fdelete_directory_internal,
        doc: /* Delete the directory named DIRECTORY.  Does not follow symlinks.  */)
   (Lisp_Object directory)
 {
+  alien_send_message1 ("delete-directory-internal", directory );
   const char *dir;
   Lisp_Object encoded_dir;
 
@@ -2476,6 +2498,7 @@ When called interactively, TRASH is t if no prefix argument is given.
 With a prefix argument, TRASH is nil.  */)
   (Lisp_Object filename, Lisp_Object trash)
 {
+  alien_send_message2 ("delete-file", filename, trash );
   Lisp_Object handler;
   Lisp_Object encoded_file;
 
@@ -2576,6 +2599,7 @@ filesystem, or if there was trouble determining whether the filesystem
 is case-insensitive.  */)
   (Lisp_Object filename)
 {
+  alien_send_message1 ("file-name-case-insensitive-p", filename );
   Lisp_Object handler;
 
   CHECK_STRING (filename);
@@ -2618,6 +2642,8 @@ An integer third arg means request confirmation if NEWNAME already exists.
 This is what happens in interactive use with M-x.  */)
   (Lisp_Object file, Lisp_Object newname, Lisp_Object ok_if_already_exists)
 {
+  alien_send_message3("rename-file", file, newname,
+		      ok_if_already_exists );
   Lisp_Object handler;
   Lisp_Object encoded_file, encoded_newname;
 
@@ -2752,6 +2778,8 @@ An integer third arg means request confirmation if NEWNAME already exists.
 This is what happens in interactive use with M-x.  */)
   (Lisp_Object file, Lisp_Object newname, Lisp_Object ok_if_already_exists)
 {
+  alien_send_message3("add-name-to-file", file, newname,
+		      ok_if_already_exists );
   Lisp_Object handler;
   Lisp_Object encoded_file, encoded_newname;
 
@@ -2805,6 +2833,8 @@ exists, and expand leading "~" or strip leading "/:" in TARGET.
 This happens for interactive use with M-x.  */)
   (Lisp_Object target, Lisp_Object linkname, Lisp_Object ok_if_already_exists)
 {
+  alien_send_message3("make-symbolic-link", target, linkname,
+		      ok_if_already_exists );
   Lisp_Object handler;
   Lisp_Object encoded_target, encoded_linkname;
 
@@ -2858,6 +2888,7 @@ file name can also start with an initial `~' or `~USER' component,
 where USER is a valid login name.  */)
   (Lisp_Object filename)
 {
+  alien_send_message1("file-name-absolute-p", filename );
   CHECK_STRING (filename);
   return file_name_absolute_p (SSDATA (filename)) ? Qt : Qnil;
 }
@@ -2902,6 +2933,8 @@ This returns nil for a symlink to a nonexistent file.
 Use `file-symlink-p' to test for such links.  */)
   (Lisp_Object filename)
 {
+  alien_send_message1 ("file-exists-p", filename
+		       );
   return check_file_access (filename, Qfile_exists_p, F_OK);
 }
 
@@ -2912,6 +2945,8 @@ For a directory, this means you can access files in that directory.
 purpose, though.)  */)
   (Lisp_Object filename)
 {
+  alien_send_message1("file-executable-p", filename
+		      );
   return check_file_access (filename, Qfile_executable_p, X_OK);
 }
 
@@ -2920,6 +2955,8 @@ DEFUN ("file-readable-p", Ffile_readable_p, Sfile_readable_p, 1, 1, 0,
 See also `file-exists-p' and `file-attributes'.  */)
   (Lisp_Object filename)
 {
+    alien_send_message1("file-readable-p", filename
+			);
   return check_file_access (filename, Qfile_readable_p, R_OK);
 }
 
@@ -2927,7 +2964,9 @@ DEFUN ("file-writable-p", Ffile_writable_p, Sfile_writable_p, 1, 1, 0,
        doc: /* Return t if file FILENAME can be written or created by you.  */)
   (Lisp_Object filename)
 {
-  Lisp_Object absname, dir, encoded;
+  alien_send_message1("file-writable-p", filename );
+  Lisp_Object absname,
+    dir, encoded;
   Lisp_Object handler;
 
   absname = Fexpand_file_name (filename, Qnil);
@@ -2967,7 +3006,10 @@ The second argument STRING is prepended to the error message.
 If there is no error, returns nil.  */)
   (Lisp_Object filename, Lisp_Object string)
 {
-  Lisp_Object handler, encoded_filename, absname;
+  alien_send_message2("access-file", filename,
+		      string );
+  Lisp_Object handler,
+    encoded_filename, absname;
 
   CHECK_STRING (filename);
   absname = Fexpand_file_name (filename, Qnil);
@@ -3039,6 +3081,7 @@ of there was trouble determining whether the file is a symbolic link.
 This function does not check whether the link target exists.  */)
   (Lisp_Object filename)
 {
+  alien_send_message1("file-symlink-p", filename );
   Lisp_Object handler;
 
   CHECK_STRING (filename);
@@ -3066,7 +3109,9 @@ Symbolic links to directories count as directories.
 See `file-symlink-p' to distinguish symlinks.  */)
   (Lisp_Object filename)
 {
-  Lisp_Object absname = expand_and_dir_to_file (filename);
+  alien_send_message1("file-directory-p", filename );
+  Lisp_Object absname
+    = expand_and_dir_to_file (filename);
 
   /* If the file name has special constructs in it,
      call the corresponding file name handler.  */
@@ -3137,6 +3182,7 @@ In order to use a directory as a buffer's current directory, this
 predicate must return true.  */)
   (Lisp_Object filename)
 {
+  alien_send_message1("file-accessible-directory-p", filename );
   Lisp_Object absname;
   Lisp_Object handler;
 
@@ -3230,6 +3276,7 @@ Symbolic links to regular files count as regular files.
 See `file-symlink-p' to distinguish symlinks.  */)
   (Lisp_Object filename)
 {
+  alien_send_message1("file-regular-p", filename );
   struct stat st;
   Lisp_Object absname = expand_and_dir_to_file (filename);
 
@@ -3265,7 +3312,10 @@ Return (nil nil nil nil) if the file is nonexistent,
 or if SELinux is disabled, or if Emacs lacks SELinux support.  */)
   (Lisp_Object filename)
 {
-  Lisp_Object user = Qnil, role = Qnil, type = Qnil, range = Qnil;
+  alien_send_message1("file-selinux-context", filename );
+  Lisp_Object user
+    = Qnil,
+	      role = Qnil, type = Qnil, range = Qnil;
   Lisp_Object absname = expand_and_dir_to_file (filename);
 
   /* If the file name has special constructs in it,
@@ -3315,6 +3365,8 @@ This function does nothing and returns nil if SELinux is disabled,
 or if Emacs was not compiled with SELinux support.  */)
   (Lisp_Object filename, Lisp_Object context)
 {
+  alien_send_message2("set-file-selinux-context", filename,
+		      context );
   Lisp_Object absname;
   Lisp_Object handler;
 #if HAVE_LIBSELINUX
@@ -3395,6 +3447,7 @@ but is otherwise undocumented and subject to change.
 Return nil if file does not exist.  */)
   (Lisp_Object filename)
 {
+  alien_send_message1("file-acl", filename );
   Lisp_Object acl_string = Qnil;
 
 #if USE_ACL
@@ -3446,6 +3499,8 @@ Setting ACL for local files requires Emacs to be built with ACL
 support.  */)
   (Lisp_Object filename, Lisp_Object acl_string)
 {
+  alien_send_message2("set-file-acl", filename, acl_string );
+  
 #if USE_ACL
   Lisp_Object absname;
   Lisp_Object handler;
@@ -3504,6 +3559,8 @@ Return nil if FILENAME does not exist.  If optional FLAG is `nofollow',
 do not follow FILENAME if it is a symbolic link.  */)
   (Lisp_Object filename, Lisp_Object flag)
 {
+  alien_send_message2("file-modes", filename,
+		      flag );
   struct stat st;
   int nofollow = symlink_nofollow_flag (flag);
   Lisp_Object absname = expand_and_dir_to_file (filename);
@@ -3532,6 +3589,8 @@ Interactively, prompt for FILENAME, and read MODE with
 command from GNU Coreutils.  */)
   (Lisp_Object filename, Lisp_Object mode, Lisp_Object flag)
 {
+  alien_send_message3("set-file-modes", filename, mode,
+		      flag );
   CHECK_FIXNUM (mode);
   int nofollow = symlink_nofollow_flag (flag);
   Lisp_Object absname = Fexpand_file_name (filename,
@@ -3565,7 +3624,9 @@ execute bit, even if the mask set by this function allows that bit
 by having the corresponding bit in the mask reset.  */)
   (Lisp_Object mode)
 {
-  mode_t oldrealmask, oldumask, newumask;
+  alien_send_message1("set-default-file-modes", mode );
+  mode_t oldrealmask,
+	      oldumask, newumask;
   CHECK_FIXNUM (mode);
   oldrealmask = realmask;
   newumask = ~ XFIXNUM (mode) & 0777;
@@ -3584,6 +3645,7 @@ DEFUN ("default-file-modes", Fdefault_file_modes, Sdefault_file_modes, 0, 0, 0,
 The value is an integer.  */)
   (void)
 {
+  alien_send_message0("default-file-modes");
   Lisp_Object value;
   XSETINT (value, (~ realmask) & 0777);
   return value;
@@ -3598,7 +3660,11 @@ success, else nil.  Use the current time if TIMESTAMP is nil.
 TIMESTAMP is in the format of `current-time'. */)
   (Lisp_Object filename, Lisp_Object timestamp, Lisp_Object flag)
 {
-  int nofollow = symlink_nofollow_flag (flag);
+  alien_send_message3("set-file-times", filename,
+		      timestamp,
+		      flag );
+  int nofollow
+    = symlink_nofollow_flag (flag);
 
   struct timespec ts[2];
   if (!NILP (timestamp))
@@ -3634,6 +3700,7 @@ DEFUN ("unix-sync", Funix_sync, Sunix_sync, 0, 0, "",
        doc: /* Tell Unix to finish all pending disk updates.  */)
   (void)
 {
+  alien_send_message0("unix-sync");
   sync ();
   return Qnil;
 }
@@ -3646,7 +3713,10 @@ If FILE1 does not exist, the answer is nil;
 otherwise, if FILE2 does not exist, the answer is t.  */)
   (Lisp_Object file1, Lisp_Object file2)
 {
-  struct stat st1, st2;
+  alien_send_message2("file-newer-than-file-p", file1,
+		      file2 );
+  struct stat st1,
+    st2;
 
   CHECK_STRING (file1);
   CHECK_STRING (file2);
@@ -3914,6 +3984,11 @@ In addition, this function decodes the inserted text from known formats
 by calling `format-decode', which see.  */)
   (Lisp_Object filename, Lisp_Object visit, Lisp_Object beg, Lisp_Object end, Lisp_Object replace)
 {
+  alien_send_message5("insert-file-contents", filename,
+	visit,
+	beg,
+	end,
+		      replace );
   struct stat st;
   struct timespec mtime;
   int fd;
@@ -5191,8 +5266,16 @@ This calls `write-region-annotate-functions' at the start, and
   (Lisp_Object start, Lisp_Object end, Lisp_Object filename, Lisp_Object append,
    Lisp_Object visit, Lisp_Object lockname, Lisp_Object mustbenew)
 {
-  return write_region (start, end, filename, append, visit, lockname, mustbenew,
-		       -1);
+  alien_send_message7("write-region", start,
+	end,
+	filename,
+	append,
+	visit,
+	lockname,
+	mustbenew
+		      );
+  return write_region (start, end, filename, append, visit,
+			     lockname, mustbenew, -1);
 }
 
 /* Like Fwrite_region, except that if DESC is nonnegative, it is a file
@@ -5551,7 +5634,9 @@ DEFUN ("car-less-than-car", Fcar_less_than_car, Scar_less_than_car, 2, 2, 0,
        doc: /* Return t if (car A) is numerically less than (car B).  */)
   (Lisp_Object a, Lisp_Object b)
 {
-  Lisp_Object ca = Fcar (a), cb = Fcar (b);
+  alien_send_message2("car-less-than-car", a, b );
+  Lisp_Object ca = Fcar (a),
+						   cb = Fcar (b);
   if (FIXNUMP (ca) && FIXNUMP (cb))
     return XFIXNUM (ca) < XFIXNUM (cb) ? Qt : Qnil;
   return arithcompare (ca, cb, ARITH_LESS);
@@ -5806,6 +5891,7 @@ If BUF is omitted or nil, it defaults to the current buffer.
 See Info node `(elisp)Modification Time' for more details.  */)
   (Lisp_Object buf)
 {
+  alien_send_message1("verify-visited-file-modtime", buf );
   struct buffer *b = decode_buffer (buf);
   struct stat st;
   Lisp_Object handler;
@@ -5852,6 +5938,7 @@ visited file doesn't exist.
 See Info node `(elisp)Modification Time' for more details.  */)
   (void)
 {
+  alien_send_message0("visited-file-modtime");
   return buffer_visited_file_modtime (current_buffer);
 }
 
@@ -5865,19 +5952,20 @@ An argument specifies the modification time value to use
 in `current-time' or an integer flag as returned by `visited-file-modtime'.  */)
   (Lisp_Object time_flag)
 {
+  alien_send_message1("set-visited-file-modtime", time_flag );
   if (!NILP (time_flag))
-    {
-      struct timespec mtime;
-      if (FIXNUMP (time_flag))
-	{
-	  int flag = check_integer_range (time_flag, -1, 0);
-	  mtime = make_timespec (0, UNKNOWN_MODTIME_NSECS - flag);
-	}
-      else
-	mtime = lisp_time_argument (time_flag);
+  {
+    struct timespec mtime;
+    if (FIXNUMP (time_flag))
+      {
+	int flag = check_integer_range (time_flag, -1, 0);
+	mtime = make_timespec (0, UNKNOWN_MODTIME_NSECS - flag);
+      }
+    else
+      mtime = lisp_time_argument (time_flag);
 
-      current_buffer->modtime = mtime;
-      current_buffer->modtime_size = -1;
+    current_buffer->modtime = mtime;
+    current_buffer->modtime_size = -1;
     }
   else if (current_buffer->base_buffer)
     error ("An indirect buffer does not have a visited file");
@@ -6010,7 +6098,11 @@ A non-nil NO-MESSAGE argument means do not print any message if successful.
 A non-nil CURRENT-ONLY argument means save only current buffer.  */)
   (Lisp_Object no_message, Lisp_Object current_only)
 {
-  struct buffer *old = current_buffer, *b;
+  alien_send_message2("do-auto-save", no_message,
+		      current_only );
+  struct buffer *old
+    = current_buffer,
+    *b;
   Lisp_Object tail, buf, hook;
   bool auto_saved = 0;
   int do_handled_files;
@@ -6201,9 +6293,11 @@ DEFUN ("set-buffer-auto-saved", Fset_buffer_auto_saved,
 No auto-save file will be written until the buffer changes again.  */)
   (void)
 {
-  /* FIXME: This should not be called in indirect buffers, since
-     they're not autosaved.  */
-  BUF_AUTOSAVE_MODIFF (current_buffer) = MODIFF;
+  alien_send_message0("set-buffer-auto-saved");
+  /* FIXME: This should not be called in indirect
+		  buffers, since they're not autosaved.  */
+  BUF_AUTOSAVE_MODIFF (current_buffer)
+    = MODIFF;
   XSETFASTINT (BVAR (current_buffer, save_length), Z - BEG);
   current_buffer->auto_save_failure_time = 0;
   return Qnil;
@@ -6214,6 +6308,7 @@ DEFUN ("clear-buffer-auto-save-failure", Fclear_buffer_auto_save_failure,
        doc: /* Clear any record of a recent auto-save failure in the current buffer.  */)
   (void)
 {
+  alien_send_message0("clear-buffer-auto-save-failure");
   current_buffer->auto_save_failure_time = 0;
   return Qnil;
 }
@@ -6226,9 +6321,12 @@ in the visited file.  If the buffer has no visited file,
 then any auto-save counts as "recent".  */)
   (void)
 {
+  alien_send_message0("recent-auto-save-p");
+  
   /* FIXME: maybe we should return nil for indirect buffers since
      they're never autosaved.  */
-  return (SAVE_MODIFF < BUF_AUTOSAVE_MODIFF (current_buffer) ? Qt : Qnil);
+  return (SAVE_MODIFF < BUF_AUTOSAVE_MODIFF (current_buffer) ? Qt
+							     : Qnil);
 }
 
 /* Reading and completing file names.  */
@@ -6240,13 +6338,13 @@ The return value is only relevant for a call to `read-file-name' that happens
 before any other event (mouse or keypress) is handled.  */)
   (void)
 {
+  alien_send_message0("next-read-file-uses-dialog-p" );
+  
 #if (defined USE_GTK || defined USE_MOTIF \
      || defined HAVE_NS || defined HAVE_NTGUI || defined HAVE_HAIKU)
   if ((NILP (last_nonmenu_event) || CONSP (last_nonmenu_event))
-      && use_dialog_box
-      && use_file_dialog
-      && window_system_available (SELECTED_FRAME ()))
-    return Qt;
+      && use_dialog_box && use_file_dialog
+      && window_system_available (SELECTED_FRAME ())) return Qt;
 #endif
   return Qnil;
 }
@@ -6273,6 +6371,7 @@ On Posix systems, this function always returns non-nil, and has no
 effect except for flushing STREAM's data.  */)
   (Lisp_Object stream, Lisp_Object mode)
 {
+  alien_send_message2("set-binary-mode", stream, mode );
   FILE *fp = NULL;
   int binmode;
 
@@ -6317,7 +6416,9 @@ storage available to a non-superuser.  All 3 numbers are in bytes.
 If the underlying system call fails, value is nil.  */)
   (Lisp_Object filename)
 {
-  filename = Fexpand_file_name (filename, Qnil);
+  alien_send_message1("file-system-info", filename );
+  filename
+    = Fexpand_file_name (filename, Qnil);
 
   /* If the file name has special constructs in it,
      call the corresponding file name handler.  */

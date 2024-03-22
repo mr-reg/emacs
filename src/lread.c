@@ -45,6 +45,7 @@ along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 #include "pdumper.h"
 #include <c-ctype.h>
 #include <vla.h>
+#include "alien-intercomm.h"
 
 #ifdef MSDOS
 #include "msdos.h"
@@ -1218,6 +1219,12 @@ Return t if the file exists and loads successfully.  */)
   (Lisp_Object file, Lisp_Object noerror, Lisp_Object nomessage,
    Lisp_Object nosuffix, Lisp_Object must_suffix)
 {
+  alien_send_message5 ("load", file, 
+			       noerror,
+			       nomessage, 
+			       nosuffix,
+		        must_suffix );
+
   FILE *stream UNINIT;
   int fd;
   specpdl_ref fd_index UNINIT;
