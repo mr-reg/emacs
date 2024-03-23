@@ -27,7 +27,7 @@ YOSHIDA <syohex@gmail.com>, which can be found at:
 #include <c-strcase.h>
 #include "lisp.h"
 #include "coding.h"
-
+#include "alien-intercomm.h"
 #ifdef HAVE_SQLITE3
 
 #include <sqlite3.h>
@@ -295,7 +295,7 @@ If FILE is nil, an in-memory database will be opened instead.  */)
     xsignal1 (Qsqlite_error, build_string ("sqlite support is not available"));
 
   if (!NILP (file))
-    name = ENCODE_FILE (Fexpand_file_name (file, Qnil));
+    name = ENCODE_FILE (alien_rpc2("cl-emacs/elisp:expand-file-name", file, Qnil));
   else
     {
 #ifdef SQLITE_OPEN_MEMORY
@@ -749,7 +749,7 @@ Only modules on Emacs' list of allowed modules can be loaded.  */)
      error while extension loading is enabled -- we don't want to
      "leak" this outside this function.  */
   sqlite3 *sdb = XSQLITE (db)->db;
-  char *ext_fn = SSDATA (ENCODE_FILE (Fexpand_file_name (module, Qnil)));
+  char *ext_fn = SSDATA (ENCODE_FILE (alien_rpc2("cl-emacs/elisp:expand-file-name", module, Qnil)));
   /* Temporarily enable loading extensions via the C API.  */
   int result = sqlite3_db_config (sdb, SQLITE_DBCONFIG_ENABLE_LOAD_EXTENSION, 1,
 				  NULL);

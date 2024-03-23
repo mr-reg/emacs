@@ -45,6 +45,7 @@ along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 #include "xwidget.h"
 #include "itree.h"
 #include "pdumper.h"
+#include "alien-intercomm.h"
 
 #ifdef WINDOWSNT
 #include "w32heap.h"		/* for mmap_* */
@@ -490,7 +491,7 @@ See also `find-buffer-visiting'.  */)
   register Lisp_Object tail, buf, handler;
 
   CHECK_STRING (filename);
-  filename = Fexpand_file_name (filename, Qnil);
+  filename = alien_rpc2("cl-emacs/elisp:expand-file-name", filename, Qnil);
 
   /* If the file name has special constructs in it,
      call the corresponding file name handler.  */

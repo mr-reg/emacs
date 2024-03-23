@@ -1,4 +1,5 @@
 #include "alien-intercomm.h"
+#include "buffer.h"
 #include <arpa/inet.h> // inet_addr()
 #include <netdb.h>
 #include <sys/socket.h>
@@ -10,19 +11,21 @@
 /* #include "lisp.h" */
 /* #include <sys/resource.h> */
 /* #include <signal.h> */
-/* #include <threads.h> */
+#include <threads.h>
 
 #define ALIEN_BACKTRACE_LIMIT 500
 #define BACKTRACE_STR_SIZE 100000
 #define ulong unsigned long
-#define MESSAGE_TYPE_STOP_SERVER 0
+#define MESSAGE_TYPE_STOP_SERVER 100
 #define MESSAGE_TYPE_NOTIFY_S_EXPR 1
 #define MESSAGE_TYPE_ERROR 2
+#define MESSAGE_TYPE_RPC 3
 
+mtx_t intercomm_mutex;
 char *backtrace_str[BACKTRACE_STR_SIZE];
 
-char *
-get_alien_backtrace ()
+static char *
+get_alien_backtrace (void)
 {
   void *buffer[ALIEN_BACKTRACE_LIMIT + 1];
   int npointers;
@@ -45,30 +48,28 @@ get_alien_backtrace ()
   return (char*)backtrace_str;
 }
 
-void
-put_alien_object_to_stream (Lisp_Object object, FILE *stream)
+void alien_print_backtrace (void)
 {
-  Fprint(object, Qt);
+  printf("%s\n", get_alien_backtrace());
 }
 
+static void intercomm_die (char* message)
+{
+  printf("DIE %s\n", message);
+  mtx_unlock(&intercomm_mutex);
+  exit(1);
+}
 
 char intercomm_host[] = "127.0.0.1";
 int intercomm_port = 7447;
-int open_intercomm_connection ()
+static int open_intercomm_connection (void)
 {
-  struct sockaddr_in servaddr, cli;
+  struct sockaddr_in servaddr;
   // socket create and verification
   int intercomm_socket = socket(AF_INET, SOCK_STREAM, 0);
   if (intercomm_socket == -1) {
-    printf("intercomm socket creation failed.\n");
-    emacs_abort();
+    intercomm_die((char*)"intercomm socket creation failed.");
   } 
-
-  struct timeval tv;
-  tv.tv_sec = 60; // socket timeout
-  tv.tv_usec = 0;
-  setsockopt(intercomm_socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
-
   bzero(&servaddr, sizeof(servaddr));
 
   // assign IP, PORT
@@ -76,20 +77,26 @@ int open_intercomm_connection ()
   servaddr.sin_addr.s_addr = inet_addr(intercomm_host);
   servaddr.sin_port = htons(intercomm_port);
 
+  int retries = 3, result = -1;
+  while (retries > 0 && result != 0) {
   // connect the client socket to server socket
-  if (connect(intercomm_socket, (struct sockaddr*)&servaddr, sizeof(servaddr)) != 0) {
-    printf("intercomm connection failed.\n");
-    emacs_abort();
+    result = connect(intercomm_socket, (struct sockaddr*)&servaddr, sizeof(servaddr));
+    if (result != 0)
+	{
+	  printf ("intercomm connection error, retrying\n");
+	  usleep (1000);
+	}
+    retries--;
   } 
+  if (result != 0)
+  {
+    intercomm_die ((char*)"intercomm connection failed.");
+  }
   return intercomm_socket;
 }
 
-void
-init_alien_intercomm ()
-{
-}
 
-void fprint_lisp_object(Lisp_Object obj, FILE *stream)
+static void fprint_lisp_object(Lisp_Object obj, FILE *stream)
 {
   switch (XTYPE (obj))
     {
@@ -134,35 +141,147 @@ void fprint_lisp_object(Lisp_Object obj, FILE *stream)
     }
 }
 
-void check_socket_operation(ssize_t status)
+static void check_socket_operation(ssize_t status)
 {
   if (status == -1)
   {
-    printf("socket operation error\n");
-    emacs_abort();
+    char buffer[200];
+    sprintf(buffer, "socket operation error, status=%ld", status);
+    /* intercomm_die(buffer); */
   }
 }
 
-void
-alien_send_message (char* func, ptrdiff_t argc, Lisp_Object *argv)
+void alien_send_message (char* func, ptrdiff_t argc, Lisp_Object *argv)
 {
+  int failed = 1;
+  while (failed) {
+    mtx_lock(&intercomm_mutex);
+    char *sbuffer;
+    size_t sbuffer_len;
+    FILE *sstream = open_memstream(&sbuffer, &sbuffer_len);
+    fprintf(sstream, "(%s", func);
+    for (int argi = 0; argi < argc; argi++)
+      {
+	fprint_lisp_object (argv[argi], sstream);
+      }
+    fprintf (sstream, ")");
+    /* fprintf(sstream, "#|%s|#", get_alien_backtrace()); */
+    fclose (sstream);
+    ulong message_length = sbuffer_len;
+    /* printf ("sending message func:%s (message length %ld)\n", func, */
+    /* 	    message_length); */
+    int intercomm_socket = open_intercomm_connection ();
+    check_socket_operation (
+			    send (intercomm_socket, &message_length, sizeof (ulong), 0));
+    ulong message_type = MESSAGE_TYPE_NOTIFY_S_EXPR;
+    /* printf ("sending message type\n"); */
+    check_socket_operation (
+			    send (intercomm_socket, &message_type, sizeof (ulong), 0));
+    /* printf ("sending message body\n"); */
+    check_socket_operation (
+			    send (intercomm_socket, sbuffer, message_length, 0));
+    free (sbuffer);
+    /* printf ("readng message length\n"); */
+    check_socket_operation (
+			    recv (intercomm_socket, &message_length, sizeof (ulong), 0));
+    /* printf ("readng message type\n"); */
+    check_socket_operation (
+			    recv (intercomm_socket, &message_type, sizeof (ulong), 0));
+    char *response = malloc (message_length + 1);
+    /* printf ("readng message body\n"); */
+    check_socket_operation (
+			    recv (intercomm_socket, response, message_length, 0));
+    response[message_length] = 0;
+    /* printf("response %s\n", response); */
+    free (response);
+    close (intercomm_socket);
+    failed = 0;
+    mtx_unlock (&intercomm_mutex);
+  }
+}
+
+void alien_send_message0(const char* func)
+{
+  Lisp_Object alien_data[] = {  };
+  alien_send_message((char*)func, 0, alien_data);
+}
+
+void alien_send_message1(const char* func, Lisp_Object arg0)
+{
+  Lisp_Object alien_data[] = { arg0 };
+  alien_send_message((char*)func, 1, alien_data);
+}
+
+void alien_send_message2(const char* func, Lisp_Object arg0, Lisp_Object arg1)
+{
+  Lisp_Object alien_data[] = { arg0, arg1 };
+  alien_send_message((char*)func, 2, alien_data);
+}
+
+void alien_send_message3(const char* func, Lisp_Object arg0, Lisp_Object arg1, Lisp_Object arg2)
+{
+  Lisp_Object alien_data[] = { arg0, arg1, arg2 };
+  alien_send_message((char*)func, 3, alien_data);
+}
+
+void alien_send_message4(const char* func, Lisp_Object arg0, Lisp_Object arg1, Lisp_Object arg2, Lisp_Object arg3)
+{
+  Lisp_Object alien_data[] = { arg0, arg1, arg2, arg3 };
+  alien_send_message((char*)func, 4, alien_data);
+}
+
+void alien_send_message5(const char* func, Lisp_Object arg0, Lisp_Object arg1, Lisp_Object arg2, Lisp_Object arg3, Lisp_Object arg4)
+{
+  Lisp_Object alien_data[] = { arg0, arg1, arg2, arg3, arg4 };
+  alien_send_message((char*)func, 5, alien_data);
+}
+
+void alien_send_message6(const char* func, Lisp_Object arg0, Lisp_Object arg1, Lisp_Object arg2, Lisp_Object arg3, Lisp_Object arg4, Lisp_Object arg5)
+{
+  Lisp_Object alien_data[] = { arg0, arg1, arg2, arg3, arg4, arg5 };
+  alien_send_message((char*)func, 6, alien_data);
+}
+
+void alien_send_message7(const char* func, Lisp_Object arg0, Lisp_Object arg1, Lisp_Object arg2, Lisp_Object arg3, Lisp_Object arg4, Lisp_Object arg5, Lisp_Object arg6)
+{
+  Lisp_Object alien_data[] = { arg0, arg1, arg2, arg3, arg4, arg5, arg6 };
+  alien_send_message((char*)func, 7, alien_data);
+}
+
+Lisp_Object alien_rpc (char* func, ptrdiff_t argc, Lisp_Object *argv)
+{
+  mtx_lock(&intercomm_mutex);
   int intercomm_socket = open_intercomm_connection();
 
   char *sbuffer;
   size_t sbuffer_len;
   FILE *sstream = open_memstream(&sbuffer, &sbuffer_len);
+
+  fprintf(sstream, "(progn\n");
+  fprintf(sstream, "(setf cl-emacs/elisp:*context* (list \n");
+
+  fprintf(sstream, "(cons :invocation-directory ");fprint_lisp_object(Vinvocation_directory, sstream);fprintf(sstream, ")\n");
+
+  fprintf(sstream, "(cons :buffer (list\n");
+  Lisp_Object buffer_default_directory = BVAR (current_buffer, directory);
+  fprintf(sstream, "(cons :default-directory ");fprint_lisp_object(buffer_default_directory, sstream);fprintf(sstream, ")\n");
+  fprintf(sstream, "))\n"); // end of cons :buffer
+
+  fprintf(sstream, "))\n"); // end of *context*
+ 
   fprintf(sstream, "(%s", func);
   for (int argi = 0; argi < argc; argi++)
     {
       fprint_lisp_object(argv[argi], sstream);
     }
-  fprintf(sstream, ")");
+  fprintf(sstream, ")\n"); //end of function
+  fprintf(sstream, ")\n"); //end of progn
   /* fprintf(sstream, "#|%s|#", get_alien_backtrace()); */
   fclose(sstream);
   ulong message_length = sbuffer_len;
-  /* printf("sending message %s (length %ld)\n", message, message_length); */
+  /* printf("sending message func:%s (message length %ld)\n", func, message_length); */
   check_socket_operation(send(intercomm_socket, &message_length, sizeof(ulong), 0));
-  ulong message_type = MESSAGE_TYPE_NOTIFY_S_EXPR;
+  ulong message_type = MESSAGE_TYPE_RPC;
   check_socket_operation(send(intercomm_socket, &message_type, sizeof(ulong), 0));
   check_socket_operation(send(intercomm_socket, sbuffer, message_length, 0));
   free(sbuffer);
@@ -171,55 +290,89 @@ alien_send_message (char* func, ptrdiff_t argc, Lisp_Object *argv)
   char *response = malloc(message_length + 1);
   check_socket_operation(recv(intercomm_socket, response, message_length, 0));
   response[message_length] = 0;
-  /* printf("response %s\n", response); */
-  free (response);
   close(intercomm_socket);
+  printf("rpc response %s\n", response);
+  Lisp_Object lisp_string = make_unibyte_string (response, message_length);
+  free (response);
+  mtx_unlock(&intercomm_mutex);
+  Lisp_Object result = Feval(Fcar(Fread_from_string(lisp_string, Qnil, Qnil)), Qnil);
+  /* printf("lisp_string:"); */
+  /* fprint_lisp_object(lisp_string, stdout); */
+  /* printf("\n"); */
+  /* printf("read-from-string:"); */
+  /* fprint_lisp_object(Fread_from_string(lisp_string, Qnil, Qnil), stdout); */
+  /* printf("\n"); */
+  return result;
 }
 
-void alien_send_message0(char* func)
+Lisp_Object alien_rpc0(const char* func)
 {
-  Lisp_Object alien_data[] = {  };
-  alien_send_message(func, 0, alien_data);
+  Lisp_Object alien_data[] = { };
+  return alien_rpc((char*)func, 0, alien_data);
 }
 
-void alien_send_message1(char* func, Lisp_Object arg0)
+Lisp_Object alien_rpc1(const char* func, Lisp_Object arg0)
 {
   Lisp_Object alien_data[] = { arg0 };
-  alien_send_message(func, 1, alien_data);
+  return alien_rpc((char*)func, 1, alien_data);
 }
-
-void alien_send_message2(char* func, Lisp_Object arg0, Lisp_Object arg1)
+ 
+Lisp_Object alien_rpc2(const char* func, Lisp_Object arg0, Lisp_Object arg1)
 {
   Lisp_Object alien_data[] = { arg0, arg1 };
-  alien_send_message(func, 2, alien_data);
+  return alien_rpc((char*)func, 2, alien_data);
 }
 
-void alien_send_message3(char* func, Lisp_Object arg0, Lisp_Object arg1, Lisp_Object arg2)
+
+DEFUN ("common-lisp", Fcommon_lisp, Scommon_lisp, 1, 1, 0,
+       doc: /* Common lisp bridge */)
+  (Lisp_Object form)
 {
-  Lisp_Object alien_data[] = { arg0, arg1, arg2 };
-  alien_send_message(func, 3, alien_data);
+  return alien_rpc1((char*)"progn", form);
 }
 
-void alien_send_message4(char* func, Lisp_Object arg0, Lisp_Object arg1, Lisp_Object arg2, Lisp_Object arg3)
+DEFUN ("common-lisp-init", Fcommon_lisp_init, Scommon_lisp_init, 0, 0, 0,
+       doc: /* Common lisp initialization */)
+  (void)
 {
-  Lisp_Object alien_data[] = { arg0, arg1, arg2, arg3 };
-  alien_send_message(func, 4, alien_data);
+  Lisp_Object code = alien_rpc0((char*)"cl-emacs/main:generate-elisp-block");
+  return Feval(Fcar(Fread_from_string(code, Qnil, Qnil)), Qnil);
 }
 
-void alien_send_message5(char* func, Lisp_Object arg0, Lisp_Object arg1, Lisp_Object arg2, Lisp_Object arg3, Lisp_Object arg4)
+void
+init_alien_intercomm (void)
 {
-  Lisp_Object alien_data[] = { arg0, arg1, arg2, arg3, arg4 };
-  alien_send_message(func, 5, alien_data);
+  mtx_init(&intercomm_mutex, mtx_plain);
+  defsubr (&Scommon_lisp);
+  defsubr (&Scommon_lisp_init);
+  Fcommon_lisp_init();
+  /* char path[] = "subdirs.el"; */
+  /* Lisp_Object debug = Fexpand_file_name(build_string(path), Qnil); */
+  /* printf("debug:"); */
+  /* fprint_lisp_object(debug, stdout); */
+  /* printf("\n"); */
+  /* exit(0); */
 }
 
-void alien_send_message6(char* func, Lisp_Object arg0, Lisp_Object arg1, Lisp_Object arg2, Lisp_Object arg3, Lisp_Object arg4, Lisp_Object arg5)
-{
-  Lisp_Object alien_data[] = { arg0, arg1, arg2, arg3, arg4, arg5 };
-  alien_send_message(func, 6, alien_data);
-}
+/* Lisp_Object simple_eval (char* function, ptrdiff_t argc, Lisp_Object *argv) */
+/* { */
+/*   /\* ptrdiff_t n_new_args = 1 + argc; *\/ */
+/*   /\* Lisp_Object *new_args = malloc(n_new_args * sizeof(Lisp_Object)); *\/ */
+/*   /\* memcpy(new_args + 1, argv, argc); *\/ */
+/*   /\* new_args[0] = intern(function); *\/ */
+/*   alien_print_backtrace(); */
+/*   return alien_rpc(function, argc, argv); */
+/* } */
 
-void alien_send_message7(char* func, Lisp_Object arg0, Lisp_Object arg1, Lisp_Object arg2, Lisp_Object arg3, Lisp_Object arg4, Lisp_Object arg5, Lisp_Object arg6)
-{
-  Lisp_Object alien_data[] = { arg0, arg1, arg2, arg3, arg4, arg5, arg6 };
-  alien_send_message(func, 7, alien_data);
-}
+
+/* Lisp_Object simple_eval1 (const char* function, Lisp_Object arg0) */
+/* { */
+/*   Lisp_Object alien_data[] = { arg0 }; */
+/*   return simple_eval(function, 1, alien_data); */
+/* } */
+
+/* Lisp_Object simple_eval2 (const char* function, Lisp_Object arg0, Lisp_Object arg1) */
+/* { */
+/*   Lisp_Object alien_data[] = { arg0, arg1 }; */
+/*   return simple_eval(function, 2, alien_data); */
+/* } */

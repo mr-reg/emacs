@@ -1768,18 +1768,18 @@ maybe_swap_for_eln (bool no_native, Lisp_Object *filename, int *fd,
     {
       dir = XCAR (eln_path_tail);
       Lisp_Object eln_name =
-	Fexpand_file_name (eln_rel_name,
-			   Fexpand_file_name (Vcomp_native_version_dir, dir));
+	alien_rpc2("cl-emacs/elisp:expand-file-name", eln_rel_name,
+			   alien_rpc2("cl-emacs/elisp:expand-file-name", Vcomp_native_version_dir, dir));
       if (maybe_swap_for_eln1 (src_name, eln_name, filename, fd, mtime))
 	return;
     }
 
   /* Look also in preloaded subfolder of the last entry in
      `comp-eln-load-path'.  */
-  dir = Fexpand_file_name (build_string ("preloaded"),
-			   Fexpand_file_name (Vcomp_native_version_dir,
+  dir = alien_rpc2("cl-emacs/elisp:expand-file-name", build_string ("preloaded"),
+			   alien_rpc2("cl-emacs/elisp:expand-file-name", Vcomp_native_version_dir,
 					      dir));
-  maybe_swap_for_eln1 (src_name, Fexpand_file_name (eln_rel_name, dir),
+  maybe_swap_for_eln1 (src_name, alien_rpc2("cl-emacs/elisp:expand-file-name", eln_rel_name, dir),
 		       filename, fd, mtime);
 #endif
 }
@@ -1863,13 +1863,13 @@ openp (Lisp_Object path, Lisp_Object str, Lisp_Object suffixes,
     if (EQ (path, just_use_str))
       filename = str;
     else
-      filename = Fexpand_file_name (str, XCAR (path));
+      filename = alien_rpc2("cl-emacs/elisp:expand-file-name", str, XCAR (path));
     if (!complete_filename_p (filename))
       /* If there are non-absolute elts in PATH (eg ".").  */
       /* Of course, this could conceivably lose if luser sets
 	 default-directory to be something non-absolute...  */
       {
-	filename = Fexpand_file_name (filename, BVAR (current_buffer, directory));
+	filename = alien_rpc2("cl-emacs/elisp:expand-file-name", filename, BVAR (current_buffer, directory));
 	if (!complete_filename_p (filename))
 	  /* Give up on this path element!  */
 	  continue;
@@ -2240,7 +2240,7 @@ readevalloop (Lisp_Object readcharfun,
   /* Ensure sourcename is absolute, except whilst preloading.  */
   if (!will_dump_p ()
       && !NILP (sourcename) && !NILP (Ffile_name_absolute_p (sourcename)))
-    sourcename = Fexpand_file_name (sourcename, Qnil);
+    sourcename = alien_rpc2("cl-emacs/elisp:expand-file-name", sourcename, Qnil);
 
   loadhist_initialize (sourcename);
 
@@ -5225,7 +5225,7 @@ load_path_default (void)
       /* Add to the path the lisp subdir of the installation
          dir, if it is accessible.  Note: in out-of-tree builds,
          this directory is empty save for Makefile.  */
-      tem = Fexpand_file_name (build_string ("lisp"),
+      tem = alien_rpc2("cl-emacs/elisp:expand-file-name", build_string ("lisp"),
                                Vinstallation_directory);
       tem1 = Ffile_accessible_directory_p (tem);
       if (!NILP (tem1))
@@ -5251,7 +5251,7 @@ load_path_default (void)
       /* Add site-lisp under the installation dir, if it exists.  */
       if (!no_site_lisp)
         {
-          tem = Fexpand_file_name (build_string ("site-lisp"),
+          tem = alien_rpc2("cl-emacs/elisp:expand-file-name", build_string ("site-lisp"),
                                    Vinstallation_directory);
           tem1 = Ffile_accessible_directory_p (tem);
           if (!NILP (tem1))
@@ -5269,7 +5269,7 @@ load_path_default (void)
         {
           Lisp_Object tem2;
 
-          tem = Fexpand_file_name (build_string ("src/Makefile"),
+          tem = alien_rpc2("cl-emacs/elisp:expand-file-name", build_string ("src/Makefile"),
                                    Vinstallation_directory);
           tem1 = Ffile_exists_p (tem);
 
@@ -5277,12 +5277,12 @@ load_path_default (void)
              AFTER dumping Emacs.  If the build directory is indeed
              different from the source dir, src/Makefile.in and
              src/Makefile will not be found together.  */
-          tem = Fexpand_file_name (build_string ("src/Makefile.in"),
+          tem = alien_rpc2("cl-emacs/elisp:expand-file-name", build_string ("src/Makefile.in"),
                                    Vinstallation_directory);
           tem2 = Ffile_exists_p (tem);
           if (!NILP (tem1) && NILP (tem2))
             {
-              tem = Fexpand_file_name (build_string ("lisp"),
+              tem = alien_rpc2("cl-emacs/elisp:expand-file-name", build_string ("lisp"),
                                        Vsource_directory);
 
               if (NILP (Fmember (tem, lpath)))
@@ -5290,7 +5290,7 @@ load_path_default (void)
 
               if (!no_site_lisp)
                 {
-                  tem = Fexpand_file_name (build_string ("site-lisp"),
+                  tem = alien_rpc2("cl-emacs/elisp:expand-file-name", build_string ("site-lisp"),
                                            Vsource_directory);
                   tem1 = Ffile_accessible_directory_p (tem);
                   if (!NILP (tem1))
@@ -5619,7 +5619,7 @@ and is not meant for users to change.  */);
 	       doc: /* Directory in which Emacs sources were found when Emacs was built.
 You cannot count on them to still be there!  */);
   Vsource_directory
-    = Fexpand_file_name (build_string ("../"),
+    = alien_rpc2("cl-emacs/elisp:expand-file-name", build_string ("../"),
 			 Fcar (decode_env_path (0, PATH_DUMPLOADSEARCH, 0)));
 
   DEFVAR_LISP ("preloaded-file-list", Vpreloaded_file_list,

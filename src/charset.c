@@ -40,7 +40,7 @@ along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 #include "buffer.h"
 #include "sysstdio.h"
 #include "pdumper.h"
-
+#include "alien-intercomm.h"
 /*** GENERAL NOTES on CODED CHARACTER SETS (CHARSETS) ***
 
   A coded character set ("charset" hereafter) is a meaningful
@@ -2273,7 +2273,7 @@ void
 init_charset (void)
 {
   Lisp_Object tempdir;
-  tempdir = Fexpand_file_name (build_string ("charsets"), Vdata_directory);
+  tempdir = alien_rpc2("cl-emacs/elisp:expand-file-name", build_string ("charsets"), Vdata_directory);
   if (! file_accessible_directory_p (tempdir))
     {
       /* This used to be non-fatal (dir_warning), but it should not

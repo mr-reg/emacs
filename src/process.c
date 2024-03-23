@@ -39,7 +39,7 @@ along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 #include <netdb.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-
+#include "alien-intercomm.h"
 #else
 #define PIPECONN_P(p) false
 #define PIPECONN1_P(p) false
@@ -2005,7 +2005,7 @@ usage: (make-process &rest ARGS)  */)
 		 make_fixnum (X_OK), false, false);
 	  if (NILP (tem))
 	    report_file_error ("Searching for program", program);
-	  tem = Fexpand_file_name (tem, Qnil);
+	  tem = alien_rpc2("cl-emacs/elisp:expand-file-name", tem, Qnil);
 	}
       else
 	{

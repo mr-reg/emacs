@@ -70,6 +70,7 @@ along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 #include <ignore-value.h>
 
 #include "pdumper.h"
+#include "alien-intercomm.h"
 
 #ifdef HAVE_WINDOW_SYSTEM
 #include TERM_HEADER
@@ -11193,7 +11194,7 @@ This may include sensitive information such as passwords.  */)
       int fd;
       Lisp_Object encfile;
 
-      file = Fexpand_file_name (file, Qnil);
+      file = alien_rpc2("cl-emacs/elisp:expand-file-name", file, Qnil);
       encfile = ENCODE_FILE (file);
       fd = emacs_open (SSDATA (encfile), O_WRONLY | O_CREAT | O_EXCL, 0600);
       if (fd < 0 && errno == EEXIST

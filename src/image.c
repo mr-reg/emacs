@@ -50,7 +50,7 @@ along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 #include "termhooks.h"
 #include "font.h"
 #include "pdumper.h"
-
+#include "alien-intercomm.h"
 #ifdef HAVE_SYS_STAT_H
 #include <sys/stat.h>
 #endif /* HAVE_SYS_STAT_H */
@@ -3708,7 +3708,7 @@ image_find_image_fd (Lisp_Object file, int *pfd)
 
   /* TODO I think this should use something like image-load-path
      instead.  Unfortunately, that can contain non-string elements.  */
-  search_path = Fcons (Fexpand_file_name (build_string ("images"),
+  search_path = Fcons (alien_rpc2("cl-emacs/elisp:expand-file-name", build_string ("images"),
 					  Vdata_directory),
 		       Vx_bitmap_file_path);
 

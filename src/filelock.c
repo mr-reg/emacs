@@ -48,6 +48,7 @@ along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 #include "lisp.h"
 #include "buffer.h"
 #include "coding.h"
+#include "alien-intercomm.h"
 #ifdef WINDOWSNT
 #include <share.h>
 #include <sys/socket.h>	/* for fcntl */
@@ -654,7 +655,7 @@ static Lisp_Object
 make_lock_file_name (Lisp_Object fn)
 {
   Lisp_Object lock_file_name = call1 (Qmake_lock_file_name,
-				      Fexpand_file_name (fn, Qnil));
+				      alien_rpc2("cl-emacs/elisp:expand-file-name", fn, Qnil));
   return !NILP (lock_file_name) ? ENCODE_FILE (lock_file_name) : Qnil;
 }
 

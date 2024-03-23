@@ -24,7 +24,7 @@ along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 #include <stdlib.h>
 #include <sys/types.h>
 #include <unistd.h>
-
+#include "alien-intercomm.h"
 #ifdef MSDOS
 extern char **environ;
 #endif
@@ -302,7 +302,7 @@ usage: (call-process PROGRAM &optional INFILE DESTINATION DISPLAY &rest ARGS)  *
     {
       /* Expand infile relative to the current buffer's current
 	 directory, or its unhandled equivalent ("~").  */
-      infile = Fexpand_file_name (args[1], get_current_directory (false));
+      infile = alien_rpc2("cl-emacs/elisp:expand-file-name", args[1], get_current_directory (false));
       CHECK_STRING (infile);
     }
   else
@@ -438,7 +438,7 @@ call_process (ptrdiff_t nargs, Lisp_Object *args, int filefd,
 	      if (NILP (stderr_file) || EQ (Qt, stderr_file))
 		error_file = stderr_file;
 	      else
-		error_file = Fexpand_file_name (stderr_file, Qnil);
+		error_file = alien_rpc2("cl-emacs/elisp:expand-file-name", stderr_file, Qnil);
 	    }
 
 	  buffer = XCAR (buffer);
@@ -451,7 +451,7 @@ call_process (ptrdiff_t nargs, Lisp_Object *args, int filefd,
 	  if (CONSP (ofile))
 	    ofile = XCAR (ofile);
 	  CHECK_STRING (ofile);
-	  output_file = Fexpand_file_name (ofile,
+	  output_file = alien_rpc2("cl-emacs/elisp:expand-file-name", ofile,
 					   BVAR (current_buffer, directory));
 	  CHECK_STRING (output_file);
 	  buffer = Qnil;
@@ -964,7 +964,7 @@ create_temp_file (ptrdiff_t nargs, Lisp_Object *args,
     }
 
   {
-    Lisp_Object pattern = Fexpand_file_name (Vtemp_file_name_pattern, tmpdir);
+    Lisp_Object pattern = alien_rpc2("cl-emacs/elisp:expand-file-name", Vtemp_file_name_pattern, tmpdir);
     char *tempfile;
 
 #ifdef WINDOWSNT
@@ -1927,7 +1927,7 @@ init_callproc (void)
     {
       /* Add to the path the lib-src subdir of the installation dir.  */
       Lisp_Object tem;
-      tem = Fexpand_file_name (build_string ("lib-src"),
+      tem = alien_rpc2("cl-emacs/elisp:expand-file-name", build_string ("lib-src"),
 			       Vinstallation_directory);
 #ifndef MSDOS
 	  /* MSDOS uses wrapped binaries, so don't do this.  */
@@ -1944,7 +1944,7 @@ init_callproc (void)
       /* Maybe use ../etc as well as ../lib-src.  */
       if (data_dir == 0)
 	{
-	  tem = Fexpand_file_name (build_string ("etc"),
+	  tem = alien_rpc2("cl-emacs/elisp:expand-file-name", build_string ("etc"),
 				   Vinstallation_directory);
 	  Vdoc_directory = Ffile_name_as_directory (tem);
 	}
@@ -1962,15 +1962,15 @@ init_callproc (void)
       Lisp_Object tem, srcdir;
       Lisp_Object lispdir = Fcar (decode_env_path (0, PATH_DUMPLOADSEARCH, 0));
 
-      srcdir = Fexpand_file_name (build_string ("../src/"), lispdir);
+      srcdir = alien_rpc2("cl-emacs/elisp:expand-file-name", build_string ("../src/"), lispdir);
 
-      tem = Fexpand_file_name (build_string ("NEWS"), Vdata_directory);
+      tem = alien_rpc2("cl-emacs/elisp:expand-file-name", build_string ("NEWS"), Vdata_directory);
       if (!NILP (Fequal (srcdir, Vinvocation_directory))
 	  || NILP (Ffile_exists_p (tem)) || !NILP (Vinstallation_directory))
 	{
 	  Lisp_Object newdir;
-	  newdir = Fexpand_file_name (build_string ("../etc/"), lispdir);
-	  tem = Fexpand_file_name (build_string ("NEWS"), newdir);
+	  newdir = alien_rpc2("cl-emacs/elisp:expand-file-name", build_string ("../etc/"), lispdir);
+	  tem = alien_rpc2("cl-emacs/elisp:expand-file-name", build_string ("NEWS"), newdir);
 	  if (!NILP (Ffile_exists_p (tem)))
 	    Vdata_directory = newdir;
 	}

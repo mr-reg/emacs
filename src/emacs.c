@@ -149,6 +149,8 @@ extern char etext;
 #include "comp.h"
 #include "thread.h"
 
+#include "alien-intercomm.h"
+
 static const char emacs_version[] = PACKAGE_VERSION;
 static const char emacs_copyright[] = COPYRIGHT;
 static const char emacs_bugreport[] = PACKAGE_BUGREPORT;
@@ -531,7 +533,7 @@ init_cmdargs (int argc, char **argv, int skip_args, char const *original_pwd)
       Lisp_Object odir =
 	original_pwd ? build_unibyte_string (original_pwd) : Qnil;
 
-      Vinvocation_directory = Fexpand_file_name (Vinvocation_directory, odir);
+      Vinvocation_directory = alien_rpc2("cl-emacs/elisp:expand-file-name", Vinvocation_directory, odir);
     }
 
   Vinstallation_directory = Qnil;
@@ -553,10 +555,10 @@ init_cmdargs (int argc, char **argv, int skip_args, char const *original_pwd)
 	      if (!NILP (Ffboundp (file_truename)))
 		dir = call1 (file_truename, dir);
 	    }
-	  dir = Fexpand_file_name (build_string ("../.."), dir);
+	  dir = alien_rpc2("expand_file_name", build_string ("../.."), dir);
 	}
 #endif
-      name = Fexpand_file_name (Vinvocation_name, dir);
+      name = alien_rpc2("cl-emacs/elisp:expand-file-name", Vinvocation_name, dir);
       while (1)
 	{
 	  Lisp_Object tem, lib_src_exists;
@@ -565,14 +567,14 @@ init_cmdargs (int argc, char **argv, int skip_args, char const *original_pwd)
 	  /* See if dir contains subdirs for use by Emacs.
 	     Check for the ones that would exist in a build directory,
 	     not including lisp and info.  */
-	  tem = Fexpand_file_name (build_string ("lib-src"), dir);
+	  tem = alien_rpc2("cl-emacs/elisp:expand-file-name", build_string ("lib-src"), dir);
 	  lib_src_exists = Ffile_exists_p (tem);
 
 #ifdef MSDOS
 	  /* MSDOS installations frequently remove lib-src, but we still
 	     must set installation-directory, or else info won't find
 	     its files (it uses the value of installation-directory).  */
-	  tem = Fexpand_file_name (build_string ("info"), dir);
+	  tem = alien_rpc2("cl-emacs/elisp:expand-file-name", build_string ("info"), dir);
 	  info_exists = Ffile_exists_p (tem);
 #else
 	  info_exists = Qnil;
@@ -580,7 +582,7 @@ init_cmdargs (int argc, char **argv, int skip_args, char const *original_pwd)
 
 	  if (!NILP (lib_src_exists) || !NILP (info_exists))
 	    {
-	      tem = Fexpand_file_name (build_string ("etc"), dir);
+	      tem = alien_rpc2("cl-emacs/elisp:expand-file-name", build_string ("etc"), dir);
 	      etc_exists = Ffile_exists_p (tem);
 	      if (!NILP (etc_exists))
 		{
@@ -590,13 +592,13 @@ init_cmdargs (int argc, char **argv, int skip_args, char const *original_pwd)
 	    }
 
 	  /* See if dir's parent contains those subdirs.  */
-	  tem = Fexpand_file_name (build_string ("../lib-src"), dir);
+	  tem = alien_rpc2("cl-emacs/elisp:expand-file-name", build_string ("../lib-src"), dir);
 	  lib_src_exists = Ffile_exists_p (tem);
 
 
 #ifdef MSDOS
 	  /* See the MSDOS commentary above.  */
-	  tem = Fexpand_file_name (build_string ("../info"), dir);
+	  tem = alien_rpc2("cl-emacs/elisp:expand-file-name", build_string ("../info"), dir);
 	  info_exists = Ffile_exists_p (tem);
 #else
 	  info_exists = Qnil;
@@ -604,11 +606,11 @@ init_cmdargs (int argc, char **argv, int skip_args, char const *original_pwd)
 
 	  if (!NILP (lib_src_exists) || !NILP (info_exists))
 	    {
-	      tem = Fexpand_file_name (build_string ("../etc"), dir);
+	      tem = alien_rpc2("cl-emacs/elisp:expand-file-name", build_string ("../etc"), dir);
 	      etc_exists = Ffile_exists_p (tem);
 	      if (!NILP (etc_exists))
 		{
-		  tem = Fexpand_file_name (build_string (".."), dir);
+		  tem = alien_rpc2("cl-emacs/elisp:expand-file-name", build_string (".."), dir);
                   Vinstallation_directory = Ffile_name_as_directory (tem);
 		  break;
 		}
@@ -619,7 +621,7 @@ init_cmdargs (int argc, char **argv, int skip_args, char const *original_pwd)
 	  tem = Ffile_symlink_p (name);
 	  if (!NILP (tem))
 	    {
-	      name = Fexpand_file_name (tem, dir);
+	      name = alien_rpc2("cl-emacs/elisp:expand-file-name", tem, dir);
 	      dir = Ffile_name_directory (name);
 	    }
 	  else
@@ -1225,7 +1227,7 @@ maybe_load_seccomp (int argc, char **argv)
 
 #endif  /* SECCOMP_USABLE */
 
-int emacs_main (int argc, char **argv)
+static int emacs_main (int argc, char **argv)
 {
   /* Variable near the bottom of the stack, and aligned appropriately
      for pointers.  */
@@ -2239,7 +2241,6 @@ Using an Emacs configured with --with-x-toolkit=lucid does not have this problem
       syms_of_chartab ();
       syms_of_lread ();
       syms_of_print ();
-      syms_of_eval ();
       syms_of_floatfns ();
 
       syms_of_buffer ();
@@ -2469,6 +2470,9 @@ Using an Emacs configured with --with-x-toolkit=lucid does not have this problem
   init_window ();
   init_font ();
 
+  syms_of_eval ();
+  init_alien_intercomm ();
+
   if (!initialized)
     {
       char *file;
@@ -2493,7 +2497,7 @@ Using an Emacs configured with --with-x-toolkit=lucid does not have this problem
 	 *.eln files will be found if they are there.  */
       if (!NILP (Vtop_level) && !temacs)
 	Vnative_comp_eln_load_path =
-	  Fcons (Fexpand_file_name (XCAR (Vnative_comp_eln_load_path),
+	  Fcons (alien_rpc2("cl-emacs/elisp:expand-file-name", XCAR (Vnative_comp_eln_load_path),
 				    Vinvocation_directory),
 		 Qnil);
 #endif
@@ -2525,7 +2529,6 @@ Using an Emacs configured with --with-x-toolkit=lucid does not have this problem
 
   /* Enter editor command loop.  This never returns.  */
   set_initial_minibuffer_mode ();
-  init_alien_intercomm ();
   Frecursive_edit ();
   eassume (false);
 }
@@ -2900,7 +2903,7 @@ killed.  */
   if (STRINGP (Vauto_save_list_file_name))
     {
       Lisp_Object listfile;
-      listfile = Fexpand_file_name (Vauto_save_list_file_name, Qnil);
+      listfile = alien_rpc2("cl-emacs/elisp:expand-file-name", Vauto_save_list_file_name, Qnil);
       unlink (SSDATA (listfile));
     }
 
@@ -3078,14 +3081,14 @@ You must run Emacs in batch mode in order to dump it.  */)
   specbind (symbol, Qnil);
 
   CHECK_STRING (filename);
-  filename = Fexpand_file_name (filename, Qnil);
+  filename = alien_rpc2("cl-emacs/elisp:expand-file-name", filename, Qnil);
   filename = ENCODE_FILE (filename);
   if (!NILP (symfile))
     {
       CHECK_STRING (symfile);
       if (SCHARS (symfile))
 	{
-	  symfile = Fexpand_file_name (symfile, Qnil);
+	  symfile = alien_rpc2("cl-emacs/elisp:expand-file-name", symfile, Qnil);
 	  symfile = ENCODE_FILE (symfile);
 	}
     }
@@ -3314,7 +3317,7 @@ decode_env_path (const char *evarname, const char *defalt, bool empty)
              being relative to $emacs_dir.  */
           if (edir && defaulted
               && strncmp (path, emacs_dir_env, emacs_dir_len) == 0)
-            element = Fexpand_file_name (Fsubstring
+            element = alien_rpc2("cl-emacs/elisp:expand-file-name", Fsubstring
                                          (element,
                                           make_fixnum (emacs_dir_len),
                                           Qnil),
