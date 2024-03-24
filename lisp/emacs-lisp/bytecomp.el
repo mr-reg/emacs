@@ -5366,6 +5366,7 @@ already up-to-date."
   ;; command-line-args-left is what is left of the command line, from
   ;; startup.el.
   (defvar command-line-args-left)	;Avoid 'free variable' warning
+  (common-lisp `(print "batch-byte-compile") )
   (if (not noninteractive)
       (error "`batch-byte-compile' is to be used only with -batch"))
   ;; Better crash loudly than attempting to recover from undefined
@@ -5400,6 +5401,7 @@ already up-to-date."
     (kill-emacs (if error 1 0))))
 
 (defun batch-byte-compile-file (file)
+  (common-lisp `(print (list "batch-byte-compile" ,file) ) )
   (let ((byte-compile-root-dir (or byte-compile-root-dir default-directory)))
     (if debug-on-error
         (byte-compile-file file)

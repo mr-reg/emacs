@@ -96,7 +96,7 @@ static int open_intercomm_connection (void)
 }
 
 
-static void fprint_lisp_object(Lisp_Object obj, FILE *stream)
+void fprint_lisp_object(Lisp_Object obj, FILE *stream)
 {
   switch (XTYPE (obj))
     {
@@ -117,7 +117,7 @@ static void fprint_lisp_object(Lisp_Object obj, FILE *stream)
     break;
     case Lisp_Symbol:
     {
-	fprintf (stream, " '%s", SSDATA (SYMBOL_NAME (obj)));
+      fprintf (stream, " '%s", SSDATA (SYMBOL_NAME (obj)));
     }
     break;
     case Lisp_Cons:
@@ -139,6 +139,13 @@ static void fprint_lisp_object(Lisp_Object obj, FILE *stream)
     default:
       fprintf(stream, " 'unsupported");
     }
+}
+
+void debug_lisp_object (const char* message, Lisp_Object *obj)
+{
+  printf("%s ", message);
+  fprint_lisp_object(*obj, stdout);
+  printf("\n");
 }
 
 static void check_socket_operation(ssize_t status)
@@ -258,15 +265,16 @@ Lisp_Object alien_rpc (char* func, ptrdiff_t argc, Lisp_Object *argv)
   FILE *sstream = open_memstream(&sbuffer, &sbuffer_len);
 
   fprintf(sstream, "(progn\n");
-  fprintf(sstream, "(setf cl-emacs/elisp:*context* (list \n");
+  fprintf(sstream, "  (setf cl-emacs/elisp:*context* (list \n");
 
-  fprintf(sstream, "(cons :invocation-directory ");fprint_lisp_object(Vinvocation_directory, sstream);fprintf(sstream, ")\n");
-
-  fprintf(sstream, "(cons :buffer (list\n");
-  Lisp_Object buffer_default_directory = BVAR (current_buffer, directory);
-  fprintf(sstream, "(cons :default-directory ");fprint_lisp_object(buffer_default_directory, sstream);fprintf(sstream, ")\n");
-  fprintf(sstream, "))\n"); // end of cons :buffer
-
+  /* fprintf(sstream, "  (cons :emacs-wd ");fprint_lisp_object(build_string(emacs_wd), sstream);fprintf(sstream, ")\n"); */
+  fprintf(sstream, "  (cons :interpreter-environment ");fprint_lisp_object(Vinternal_interpreter_environment, sstream);fprintf(sstream, ")\n");
+  fprintf(sstream, "  (cons :invocation-directory ");fprint_lisp_object(Vinvocation_directory, sstream);fprintf(sstream, ")\n");
+  fprintf(sstream, "  (cons :buffer (list\n");
+  fprintf(sstream, "    (cons :name ");fprint_lisp_object(BVAR (current_buffer, name), sstream);fprintf(sstream, ")\n");
+  /* fprintf(sstream, "    (cons :buffer \"%ld\")\n", current_buffer); */
+  fprintf(sstream, "    (cons :default-directory ");fprint_lisp_object(BVAR (current_buffer, directory), sstream);fprintf(sstream, ")\n");
+  fprintf(sstream, "  ))\n"); // end of cons :buffer
   fprintf(sstream, "))\n"); // end of *context*
  
   fprintf(sstream, "(%s", func);
@@ -294,8 +302,22 @@ Lisp_Object alien_rpc (char* func, ptrdiff_t argc, Lisp_Object *argv)
   printf("rpc response %s\n", response);
   Lisp_Object lisp_string = make_unibyte_string (response, message_length);
   free (response);
+  Lisp_Object result = Fcar(Fread_from_string(lisp_string, Qnil, Qnil));
+
   mtx_unlock(&intercomm_mutex);
-  Lisp_Object result = Feval(Fcar(Fread_from_string(lisp_string, Qnil, Qnil)), Qnil);
+  if (strcmp(func, "cl-emacs/elisp:expand-file-name") == 0)
+  {
+    Lisp_Object orig = Fexpand_file_name(argv[0], argv[1]);
+    if (NILP(Fstring_equal(orig, result))) {
+      printf("debug compare rpc:");
+      fprint_lisp_object(result, stdout); 
+      printf(" native:");
+      fprint_lisp_object(orig, stdout); 
+      printf("\n");
+      emacs_abort();
+    }
+  }
+
   /* printf("lisp_string:"); */
   /* fprint_lisp_object(lisp_string, stdout); */
   /* printf("\n"); */
@@ -345,7 +367,7 @@ init_alien_intercomm (void)
   mtx_init(&intercomm_mutex, mtx_plain);
   defsubr (&Scommon_lisp);
   defsubr (&Scommon_lisp_init);
-  Fcommon_lisp_init();
+  /* Fcommon_lisp_init(); */
   /* char path[] = "subdirs.el"; */
   /* Lisp_Object debug = Fexpand_file_name(build_string(path), Qnil); */
   /* printf("debug:"); */

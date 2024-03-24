@@ -2356,6 +2356,8 @@ LEXICAL can also be an actual lexical environment, in the form of an
 alist mapping symbols to their value.  */)
   (Lisp_Object form, Lisp_Object lexical)
 {
+  /* printf("eval\n"); */
+
   specpdl_ref count = SPECPDL_INDEX ();
   specbind (Qinternal_interpreter_environment,
 	    CONSP (lexical) || NILP (lexical) ? lexical : list1 (Qt));
@@ -2974,6 +2976,8 @@ Thus, (funcall \\='cons \\='x \\='y) returns (x . y).
 usage: (funcall FUNCTION &rest ARGUMENTS)  */)
   (ptrdiff_t nargs, Lisp_Object *args)
 {
+  /* printf("funcall %s\n", SSDATA (SYMBOL_NAME (args[0]))); */
+
   specpdl_ref count;
 
   maybe_quit ();

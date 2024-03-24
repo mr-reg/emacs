@@ -5531,6 +5531,803 @@ init_fileio (void)
   write_region_inhibit_fsync = noninteractive;
 }
 
+DEFUN ("expand-file-name", Fexpand_file_name, Sexpand_file_name, 1, 2, 0,
+       doc: /* Convert filename NAME to absolute, and canonicalize it.
+Second arg DEFAULT-DIRECTORY is directory to start with if NAME is relative
+\(does not start with slash or tilde); both the directory name and
+a directory's file name are accepted.  If DEFAULT-DIRECTORY is nil or
+missing, the current buffer's value of `default-directory' is used.
+NAME should be a string that is a valid file name for the underlying
+filesystem.
+
+File name components that are `.' are removed, and so are file name
+components followed by `..', along with the `..' itself; note that
+these simplifications are done without checking the resulting file
+names in the file system.
+
+Multiple consecutive slashes are collapsed into a single slash, except
+at the beginning of the file name when they are significant (e.g., UNC
+file names on MS-Windows.)
+
+An initial \"~\" in NAME expands to your home directory.
+
+An initial \"~USER\" in NAME expands to USER's home directory.  If
+USER doesn't exist, \"~USER\" is not expanded.
+
+To do other file name substitutions, see `substitute-in-file-name'.
+
+For technical reasons, this function can return correct but
+non-intuitive results for the root directory; for instance,
+\(expand-file-name ".." "/") returns "/..".  For this reason, use
+\(directory-file-name (file-name-directory dirname)) to traverse a
+filesystem tree, not (expand-file-name ".." dirname).  Note: make
+sure DIRNAME in this example doesn't end in a slash, unless it's
+the root directory.  */)
+  (Lisp_Object name, Lisp_Object default_directory)
+{
+    /* if (strstr(SSDATA(name), "subdirs.el" )) { */
+    /*   printf("expand-file-name %s", SSDATA(name)); */
+    /*   if (! NILP(default_directory)) { */
+    /* 	printf(" %s", SSDATA(default_directory)); */
+    /*   } */
+    /*   printf("\n"); */
+    /*   printf(":invocation-directory %s\n", SSDATA(Vinvocation_directory)); */
+    /*   printf(":default-directory "); */
+    /*   if (! NILP(BVAR (current_buffer, directory))) { */
+    /* 	printf("%s", SSDATA(BVAR (current_buffer, directory))); */
+    /*   } else { */
+    /* 	printf("nil"); */
+    /*   } */
+    /*   printf("\n"); */
+      
+    /*   /\* emacs_abort(); *\/ */
+    /* } */
+  /* These point to SDATA and need to be careful with string-relocation
+     during GC (via DECODE_FILE).  */
+  char *nm;
+  char *nmlim;
+  const char *newdir;
+  const char *newdirlim;
+  /* This should only point to alloca'd data.  */
+  char *target;
+
+  ptrdiff_t tlen;
+#ifdef DOS_NT
+  int drive = 0;
+  bool collapse_newdir = true;
+  bool is_escaped = 0;
+#endif /* DOS_NT */
+  ptrdiff_t length, nbytes;
+  Lisp_Object handler, result, handled_name;
+  bool multibyte;
+  Lisp_Object hdir;
+  USE_SAFE_ALLOCA;
+
+  CHECK_STRING (name);
+  CHECK_STRING_NULL_BYTES (name);
+
+  /* If the file name has special constructs in it,
+     call the corresponding file name handler.  */
+  handler = Ffind_file_name_handler (name, Qexpand_file_name);
+  if (!NILP (handler))
+    {
+      handled_name = call3 (handler, Qexpand_file_name,
+			    name, default_directory);
+      if (STRINGP (handled_name))
+	return handled_name;
+      error ("Invalid handler in `file-name-handler-alist'");
+    }
+
+  /* As a last resort, we may have to use the root as
+     default_directory below.  */
+  Lisp_Object root;
+#ifdef DOS_NT
+      /* "/" is not considered a root directory on DOS_NT, so using it
+	 as default_directory causes an infinite recursion in, e.g.,
+	 the following:
+
+            (let (default-directory)
+	      (expand-file-name "a"))
+
+	 To avoid this, we use the root of the current drive.  */
+      root = build_string (emacs_root_dir ());
+#else
+      root = build_string ("/");
+#endif
+
+  /* Use the buffer's default-directory if DEFAULT_DIRECTORY is omitted.  */
+  if (NILP (default_directory))
+    {
+      Lisp_Object dir = BVAR (current_buffer, directory);
+      /* The buffer's default-directory should be absolute or should
+	 start with `~'.  If it isn't absolute, we replace it by its
+	 expansion relative to a known absolute name ABSDIR, which is
+	 the invocation-directory if the latter is absolute, or the
+	 root otherwise.
+
+	 In case default-directory starts with `~' or `~user', where
+	 USER is a valid user name, this correctly expands it (and
+	 ABSDIR plays no role).  If USER is not a valid user name, the
+	 leading `~' loses its special meaning and is retained as part
+	 of the expanded name.  */
+      if (STRINGP (dir))
+	{
+      /* if (strstr(SSDATA(name), "empty.el" )) { */
+      /* 	printf("here2 %s\n", SSDATA(dir)); */
+      /* } */
+
+	  if (file_name_absolute_no_tilde_p (dir))
+	    {
+	      CHECK_STRING_NULL_BYTES (dir);
+	      default_directory = dir;
+	    }
+	  else
+	    {
+	      Lisp_Object absdir
+		= STRINGP (Vinvocation_directory)
+		&& file_name_absolute_no_tilde_p (Vinvocation_directory)
+		? Vinvocation_directory : root;
+  if (strstr(SSDATA(name), "empty.el" )) {
+    printf("Vinvocation_directory %s\n", SSDATA(Vinvocation_directory));
+  }
+	      default_directory = Fexpand_file_name (dir, absdir);
+	    }
+	}
+    }
+  if (! STRINGP (default_directory))
+    default_directory = root;
+
+  handler = Ffind_file_name_handler (default_directory, Qexpand_file_name);
+  if (!NILP (handler))
+    {
+      handled_name = call3 (handler, Qexpand_file_name,
+			    name, default_directory);
+      if (STRINGP (handled_name))
+	return handled_name;
+      error ("Invalid handler in `file-name-handler-alist'");
+    }
+
+  {
+    char *o = SSDATA (default_directory);
+
+    /* Make sure DEFAULT_DIRECTORY is properly expanded.
+       It would be better to do this down below where we actually use
+       default_directory.  Unfortunately, calling Fexpand_file_name recursively
+       could invoke GC, and the strings might be relocated.  This would
+       be annoying because we have pointers into strings lying around
+       that would need adjusting, and people would add new pointers to
+       the code and forget to adjust them, resulting in intermittent bugs.
+       Putting this call here avoids all that crud.
+
+       The EQ test avoids infinite recursion.  */
+    if (! NILP (default_directory) && !EQ (default_directory, name)
+	/* Save time in some common cases - as long as default_directory
+	   is not relative, it can be canonicalized with name below (if it
+	   is needed at all) without requiring it to be expanded now.  */
+#ifdef DOS_NT
+	/* Detect MSDOS file names with drive specifiers.  */
+	&& ! (IS_DRIVE (o[0]) && IS_DEVICE_SEP (o[1])
+	      && IS_DIRECTORY_SEP (o[2]))
+	/* Detect escaped file names without drive spec after "/:".
+	   These should not be recursively expanded, to avoid
+	   including the default directory twice in the expanded
+	   result.  */
+	&& ! (o[0] == '/' && o[1] == ':')
+#ifdef WINDOWSNT
+	/* Detect Windows file names in UNC format.  */
+	&& ! (IS_DIRECTORY_SEP (o[0]) && IS_DIRECTORY_SEP (o[1]))
+#endif
+#else /* not DOS_NT */
+      /* Detect Unix absolute file names (/... alone is not absolute on
+	 DOS or Windows).  */
+	&& ! (IS_DIRECTORY_SEP (o[0]))
+#endif /* not DOS_NT */
+	)
+      {
+	default_directory = Fexpand_file_name (default_directory, Qnil);
+
+	/* The above expansion might have produced a remote file name,
+	   so give the handlers one last chance to DTRT.  This can
+	   happen when both NAME and DEFAULT-DIRECTORY arguments are
+	   relative file names, and the buffer's default-directory is
+	   remote.  */
+	handler = Ffind_file_name_handler (default_directory,
+					   Qexpand_file_name);
+	if (!NILP (handler))
+	  {
+	    handled_name = call3 (handler, Qexpand_file_name,
+				  name, default_directory);
+	    if (STRINGP (handled_name))
+	      return handled_name;
+	    error ("Invalid handler in `file-name-handler-alist'");
+	  }
+      }
+  }
+  multibyte = STRING_MULTIBYTE (name);
+  bool defdir_multibyte = STRING_MULTIBYTE (default_directory);
+  if (multibyte != defdir_multibyte)
+    {
+      /* We want to make both NAME and DEFAULT_DIRECTORY have the same
+	 multibyteness.  Strategy:
+	 . If either NAME or DEFAULT_DIRECTORY is pure-ASCII, they
+	   can be converted to the multibyteness of the other one
+	   while keeping the same byte sequence.
+	 . If both are non-ASCII, the only safe conversion is to
+	   convert the multibyte one to be unibyte, because the
+	   reverse conversion potentially adds bytes while raw bytes
+	   are converted to their multibyte forms, which we will be
+	   unable to account for, since the information about the
+	   original multibyteness is lost.  If those additional bytes
+	   later leak to system APIs because they are not encoded or
+	   because they are converted to unibyte strings by keeping
+	   the data, file APIs will fail.
+
+	 Note: One could argue that if we see a multibyte string, it
+	 is evidence that file-name decoding was already set up, and
+	 we could convert unibyte strings to multibyte using
+	 DECODE_FILE.  However, this is risky, because the likes of
+	 string_to_multibyte are able of creating multibyte strings
+	 without any decoding.  */
+      if (multibyte)
+	{
+	  bool name_ascii_p = SCHARS (name) == SBYTES (name);
+	  unsigned char *p = SDATA (default_directory);
+
+	  if (!name_ascii_p)
+	    while (*p && ASCII_CHAR_P (*p))
+	      p++;
+	  if (name_ascii_p || *p != '\0')
+	    {
+	      /* DEFAULT_DIRECTORY is unibyte and possibly non-ASCII.
+		 Make a unibyte string out of NAME, and arrange for
+		 the result of this function to be a unibyte string.
+		 This is needed during bootstrapping and dumping, when
+		 Emacs cannot decode file names, because the locale
+		 environment is not set up.  */
+	      name = make_unibyte_string (SSDATA (name), SBYTES (name));
+	      multibyte = 0;
+	    }
+	  else
+	    {
+	      /* NAME is non-ASCII and multibyte, and
+		 DEFAULT_DIRECTORY is unibyte and pure-ASCII: make a
+		 multibyte string out of DEFAULT_DIRECTORY's data.  */
+	      default_directory =
+		make_multibyte_string (SSDATA (default_directory),
+				       SCHARS (default_directory),
+				       SCHARS (default_directory));
+	    }
+	}
+      else
+	{
+	  unsigned char *p = SDATA (name);
+
+	  while (*p && ASCII_CHAR_P (*p))
+	    p++;
+	  if (*p == '\0')
+	    {
+	      /* DEFAULT_DIRECTORY is multibyte and NAME is unibyte
+		 and pure-ASCII.  Make a multibyte string out of
+		 NAME's data.  */
+	      name = make_multibyte_string (SSDATA (name),
+					    SCHARS (name), SCHARS (name));
+	      multibyte = 1;
+	    }
+	  else
+	    default_directory = make_unibyte_string (SSDATA (default_directory),
+						     SBYTES (default_directory));
+	}
+    }
+
+#ifdef WINDOWSNT
+  if (!NILP (Vw32_downcase_file_names))
+    default_directory = Fdowncase (default_directory);
+#endif
+
+  /* Make a local copy of NAME to protect it from GC in DECODE_FILE below.  */
+  SAFE_ALLOCA_STRING (nm, name);
+  nmlim = nm + SBYTES (name);
+
+#ifdef DOS_NT
+  /* Note if special escape prefix is present, but remove for now.  */
+  if (nm[0] == '/' && nm[1] == ':')
+    {
+      is_escaped = 1;
+      nm += 2;
+    }
+
+  /* Find and remove drive specifier if present; this makes nm absolute
+     even if the rest of the name appears to be relative.  Only look for
+     drive specifier at the beginning.  */
+  if (IS_DRIVE (nm[0]) && IS_DEVICE_SEP (nm[1]))
+    {
+      drive = (unsigned char) nm[0];
+      nm += 2;
+    }
+
+#ifdef WINDOWSNT
+  /* If we see "c://somedir", we want to strip the first slash after the
+     colon when stripping the drive letter.  Otherwise, this expands to
+     "//somedir".  */
+  if (drive && IS_DIRECTORY_SEP (nm[0]) && IS_DIRECTORY_SEP (nm[1]))
+    nm++;
+
+  /* Discard any previous drive specifier if nm is now in UNC format.  */
+  if (IS_DIRECTORY_SEP (nm[0]) && IS_DIRECTORY_SEP (nm[1])
+      && !IS_DIRECTORY_SEP (nm[2]))
+    drive = 0;
+#endif /* WINDOWSNT */
+#endif /* DOS_NT */
+
+  /* If nm is absolute, look for `/./' or `/../' or `//''sequences; if
+     none are found, we can probably return right away.  We will avoid
+     allocating a new string if name is already fully expanded.  */
+  if (
+      IS_DIRECTORY_SEP (nm[0])
+#ifdef MSDOS
+      && drive && !is_escaped
+#endif
+#ifdef WINDOWSNT
+      && (drive || IS_DIRECTORY_SEP (nm[1])) && !is_escaped
+#endif
+      )
+    {
+      /* If it turns out that the filename we want to return is just a
+	 suffix of FILENAME, we don't need to go through and edit
+	 things; we just need to construct a new string using data
+	 starting at the middle of FILENAME.  If we set LOSE, that
+	 means we've discovered that we can't do that cool trick.  */
+      bool lose = 0;
+      char *p = nm;
+
+      while (*p)
+	{
+	  /* Since we know the name is absolute, we can assume that each
+	     element starts with a "/".  */
+
+	  /* "." and ".." are hairy.  */
+	  if (IS_DIRECTORY_SEP (p[0])
+	      && p[1] == '.'
+	      && (IS_DIRECTORY_SEP (p[2])
+		  || p[2] == 0
+		  || (p[2] == '.' && (IS_DIRECTORY_SEP (p[3])
+				      || p[3] == 0))))
+	    lose = 1;
+	  /* Replace multiple slashes with a single one, except
+	     leave leading "//" alone.  */
+	  else if (IS_DIRECTORY_SEP (p[0])
+		   && IS_DIRECTORY_SEP (p[1])
+		   && (p != nm || IS_DIRECTORY_SEP (p[2])))
+	    lose = 1;
+	  p++;
+	}
+      if (!lose)
+	{
+#ifdef DOS_NT
+	  /* Make sure directories are all separated with /, but
+	     avoid allocation of a new string when not required. */
+	  dostounix_filename (nm);
+#ifdef WINDOWSNT
+	  if (IS_DIRECTORY_SEP (nm[1]))
+	    {
+	      if (strcmp (nm, SSDATA (name)) != 0)
+		name = make_specified_string (nm, -1, nmlim - nm, multibyte);
+	    }
+	  else
+#endif
+	  /* Drive must be set, so this is okay.  */
+	  if (strcmp (nm - 2, SSDATA (name)) != 0)
+	    {
+	      name = make_specified_string (nm, -1, p - nm, multibyte);
+	      char temp[] = { DRIVE_LETTER (drive), ':', 0 };
+	      AUTO_STRING_WITH_LEN (drive_prefix, temp, 2);
+	      name = concat2 (drive_prefix, name);
+	    }
+#ifdef WINDOWSNT
+	  if (!NILP (Vw32_downcase_file_names))
+	    name = Fdowncase (name);
+#endif
+#else /* not DOS_NT */
+	  if (strcmp (nm, SSDATA (name)) != 0)
+	    name = make_specified_string (nm, -1, nmlim - nm, multibyte);
+#endif /* not DOS_NT */
+	  SAFE_FREE ();
+	  return name;
+	}
+    }
+
+  /* At this point, nm might or might not be an absolute file name.  We
+     need to expand ~ or ~user if present, otherwise prefix nm with
+     default_directory if nm is not absolute, and finally collapse /./
+     and /foo/../ sequences.
+
+     We set newdir to be the appropriate prefix if one is needed:
+       - the relevant user directory if nm starts with ~ or ~user
+       - the specified drive's working dir (DOS/NT only) if nm does not
+         start with /
+       - the value of default_directory.
+
+     Note that these prefixes are not guaranteed to be absolute (except
+     for the working dir of a drive).  Therefore, to ensure we always
+     return an absolute name, if the final prefix is not absolute we
+     append it to the current working directory.  */
+
+  newdir = newdirlim = 0;
+
+  if (nm[0] == '~'		/* prefix ~ */
+#ifdef DOS_NT
+    && !is_escaped		/* don't expand ~ in escaped file names */
+#endif
+      )
+    {
+      if (IS_DIRECTORY_SEP (nm[1])
+	  || nm[1] == 0)	/* ~ by itself */
+	{
+	  Lisp_Object tem;
+
+	  newdir = get_homedir ();
+	  nm++;
+	  tem = build_string (newdir);
+	  newdirlim = newdir + SBYTES (tem);
+	  /* get_homedir may return a unibyte string, which will bite us
+	     if we expect the directory to be multibyte.  */
+	  if (multibyte && !STRING_MULTIBYTE (tem))
+	    {
+	      hdir = DECODE_FILE (tem);
+	      newdir = SSDATA (hdir);
+	      newdirlim = newdir + SBYTES (hdir);
+	    }
+	  else if (!multibyte && STRING_MULTIBYTE (tem))
+	    multibyte = 1;
+#ifdef DOS_NT
+	  collapse_newdir = false;
+#endif
+	}
+      else			/* ~user/filename */
+	{
+	  char *nmhome = user_homedir (nm + 1);
+	  if (nmhome)
+	    {
+	      ptrdiff_t nmhomelen = strlen (nmhome);
+	      newdir = nmhome;
+	      newdirlim = newdir + nmhomelen;
+	      if (multibyte)
+		{
+		  AUTO_STRING_WITH_LEN (lisp_nmhome, nmhome, nmhomelen);
+		  hdir = DECODE_FILE (lisp_nmhome);
+		  newdir = SSDATA (hdir);
+		  newdirlim = newdir + SBYTES (hdir);
+		}
+
+	      while (*++nm && !IS_DIRECTORY_SEP (*nm))
+		continue;
+#ifdef DOS_NT
+	      collapse_newdir = false;
+#endif
+	    }
+
+	  /* If we don't find a user of that name, leave the name
+	     unchanged.  */
+	}
+    }
+
+#ifdef DOS_NT
+  /* On DOS and Windows, nm is absolute if a drive name was specified;
+     use the drive's current directory as the prefix if needed.  */
+  if (!newdir && drive)
+    {
+      /* Get default directory if needed to make nm absolute.  */
+      char *adir = NULL;
+      if (!IS_DIRECTORY_SEP (nm[0]))
+	{
+	  adir = alloca (MAXPATHLEN + 1);
+	  if (!getdefdir (c_toupper (drive) - 'A' + 1, adir))
+	    adir = NULL;
+	  else if (multibyte)
+	    {
+	      Lisp_Object tem = build_string (adir);
+
+	      tem = DECODE_FILE (tem);
+	      newdirlim = adir + SBYTES (tem);
+	      memcpy (adir, SSDATA (tem), SBYTES (tem) + 1);
+	    }
+	  else
+	    newdirlim = adir + strlen (adir);
+	}
+      if (!adir)
+	{
+	  /* Either nm starts with /, or drive isn't mounted.  */
+	  adir = alloca (4);
+	  adir[0] = DRIVE_LETTER (drive);
+	  adir[1] = ':';
+	  adir[2] = '/';
+	  adir[3] = 0;
+	  newdirlim = adir + 3;
+	}
+      newdir = adir;
+    }
+#endif /* DOS_NT */
+
+  /* Finally, if no prefix has been specified and nm is not absolute,
+     then it must be expanded relative to default_directory.  */
+
+  if (1
+#ifndef DOS_NT
+      /* /... alone is not absolute on DOS and Windows.  */
+      && !IS_DIRECTORY_SEP (nm[0])
+#endif
+#ifdef WINDOWSNT
+      && !(IS_DIRECTORY_SEP (nm[0]) && IS_DIRECTORY_SEP (nm[1])
+	   && !IS_DIRECTORY_SEP (nm[2]))
+#endif
+      && !newdir)
+    {
+      newdir = SSDATA (default_directory);
+      newdirlim = newdir + SBYTES (default_directory);
+#ifdef DOS_NT
+      /* Note if special escape prefix is present, but remove for now.  */
+      if (newdir[0] == '/' && newdir[1] == ':')
+	{
+	  is_escaped = 1;
+	  newdir += 2;
+	}
+#endif
+    }
+
+#ifdef DOS_NT
+  if (newdir)
+    {
+      /* First ensure newdir is an absolute name.  */
+      if (
+	  /* Detect MSDOS file names with drive specifiers.  */
+	  ! (IS_DRIVE (newdir[0])
+	     && IS_DEVICE_SEP (newdir[1]) && IS_DIRECTORY_SEP (newdir[2]))
+#ifdef WINDOWSNT
+	  /* Detect Windows file names in UNC format.  */
+	  && ! (IS_DIRECTORY_SEP (newdir[0]) && IS_DIRECTORY_SEP (newdir[1])
+		&& !IS_DIRECTORY_SEP (newdir[2]))
+#endif
+	  )
+	{
+	  /* Effectively, let newdir be (expand-file-name newdir cwd).
+	     Because of the admonition against calling expand-file-name
+	     when we have pointers into lisp strings, we accomplish this
+	     indirectly by prepending newdir to nm if necessary, and using
+	     cwd (or the wd of newdir's drive) as the new newdir.  */
+	  char *adir;
+#ifdef WINDOWSNT
+	  const int adir_size = MAX_UTF8_PATH;
+#else
+	  const int adir_size = MAXPATHLEN + 1;
+#endif
+
+	  if (IS_DRIVE (newdir[0]) && IS_DEVICE_SEP (newdir[1]))
+	    {
+	      drive = (unsigned char) newdir[0];
+	      newdir += 2;
+	    }
+	  if (!IS_DIRECTORY_SEP (nm[0]))
+	    {
+	      ptrdiff_t nmlen = nmlim - nm;
+	      ptrdiff_t newdirlen = newdirlim - newdir;
+	      char *tmp = alloca (newdirlen + file_name_as_directory_slop
+				  + nmlen + 1);
+	      ptrdiff_t dlen = file_name_as_directory (tmp, newdir, newdirlen,
+						       multibyte);
+	      memcpy (tmp + dlen, nm, nmlen + 1);
+	      nm = tmp;
+	      nmlim = nm + dlen + nmlen;
+	    }
+	  adir = alloca (adir_size);
+	  if (drive)
+	    {
+	      if (!getdefdir (c_toupper (drive) - 'A' + 1, adir))
+		strcpy (adir, "/");
+	    }
+	  else
+	    getcwd (adir, adir_size);
+	  if (multibyte)
+	    {
+	      Lisp_Object tem = build_string (adir);
+
+	      tem = DECODE_FILE (tem);
+	      newdirlim = adir + SBYTES (tem);
+	      memcpy (adir, SSDATA (tem), SBYTES (tem) + 1);
+	    }
+	  else
+	    newdirlim = adir + strlen (adir);
+	  newdir = adir;
+	}
+
+      /* Strip off drive name from prefix, if present.  */
+      if (IS_DRIVE (newdir[0]) && IS_DEVICE_SEP (newdir[1]))
+	{
+	  drive = newdir[0];
+	  newdir += 2;
+	}
+
+      /* Keep only a prefix from newdir if nm starts with slash
+         (//server/share for UNC, nothing otherwise).  */
+      if (IS_DIRECTORY_SEP (nm[0]) && collapse_newdir)
+	{
+#ifdef WINDOWSNT
+	  if (IS_DIRECTORY_SEP (newdir[0]) && IS_DIRECTORY_SEP (newdir[1])
+	      && !IS_DIRECTORY_SEP (newdir[2]))
+	    {
+	      char *adir = strcpy (alloca (newdirlim - newdir + 1), newdir);
+	      char *p = adir + 2;
+	      while (*p && !IS_DIRECTORY_SEP (*p)) p++;
+	      p++;
+	      while (*p && !IS_DIRECTORY_SEP (*p)) p++;
+	      *p = 0;
+	      newdir = adir;
+	      newdirlim = newdir + strlen (adir);
+	    }
+	  else
+#endif
+	    newdir = newdirlim = "";
+	}
+    }
+#endif /* DOS_NT */
+
+  /* Ignore any slash at the end of newdir, unless newdir is
+     just "/" or "//".  */
+  length = newdirlim - newdir;
+  while (length > 1 && IS_DIRECTORY_SEP (newdir[length - 1])
+	 && ! (length == 2 && IS_DIRECTORY_SEP (newdir[0])))
+    length--;
+
+  /* Now concatenate the directory and name to new space in the stack frame.  */
+  tlen = length + file_name_as_directory_slop + (nmlim - nm) + 1;
+  eassert (tlen >= file_name_as_directory_slop + 1);
+#ifdef DOS_NT
+  /* Reserve space for drive specifier and escape prefix, since either
+     or both may need to be inserted.  (The Microsoft x86 compiler
+     produces incorrect code if the following two lines are combined.)  */
+  target = alloca (tlen + 4);
+  target += 4;
+#else  /* not DOS_NT */
+  target = SAFE_ALLOCA (tlen);
+#endif /* not DOS_NT */
+  *target = 0;
+  nbytes = 0;
+
+  if (newdir)
+    {
+      if (nm[0] == 0 || IS_DIRECTORY_SEP (nm[0]))
+	{
+#ifdef DOS_NT
+	  /* If newdir is effectively "C:/", then the drive letter will have
+	     been stripped and newdir will be "/".  Concatenating with an
+	     absolute directory in nm produces "//", which will then be
+	     incorrectly treated as a network share.  Ignore newdir in
+	     this case (keeping the drive letter).  */
+	  if (!(drive && nm[0] && IS_DIRECTORY_SEP (newdir[0])
+		&& newdir[1] == '\0'))
+#endif
+	    {
+	      memcpy (target, newdir, length);
+	      target[length] = 0;
+	      nbytes = length;
+	    }
+	}
+      else
+	nbytes = file_name_as_directory (target, newdir, length, multibyte);
+    }
+
+  memcpy (target + nbytes, nm, nmlim - nm + 1);
+
+  /* Now canonicalize by removing `//', `/.' and `/foo/..' if they
+     appear.  */
+  {
+    char *p = target;
+    char *o = target;
+
+    while (*p)
+      {
+	if (!IS_DIRECTORY_SEP (*p))
+	  {
+	    *o++ = *p++;
+	  }
+	else if (p[1] == '.'
+		 && (IS_DIRECTORY_SEP (p[2])
+		     || p[2] == 0))
+	  {
+	    /* If "/." is the entire filename, keep the "/".  Otherwise,
+	       just delete the whole "/.".  */
+	    if (o == target && p[2] == '\0')
+	      *o++ = *p;
+	    p += 2;
+	  }
+	else if (p[1] == '.' && p[2] == '.'
+		 /* `/../' is the "superroot" on certain file systems.
+		    Turned off on DOS_NT systems because they have no
+		    "superroot" and because this causes us to produce
+		    file names like "d:/../foo" which fail file-related
+		    functions of the underlying OS.  (To reproduce, try a
+		    long series of "../../" in default_directory, longer
+		    than the number of levels from the root.)  */
+#ifndef DOS_NT
+		 && o != target
+#endif
+		 && (IS_DIRECTORY_SEP (p[3]) || p[3] == 0))
+	  {
+#ifdef WINDOWSNT
+	    char *prev_o = o;
+#endif
+	    while (o != target && (--o, !IS_DIRECTORY_SEP (*o)))
+	      continue;
+#ifdef WINDOWSNT
+	    /* Don't go below server level in UNC filenames.  */
+	    if (o == target + 1 && IS_DIRECTORY_SEP (*o)
+		&& IS_DIRECTORY_SEP (*target))
+	      o = prev_o;
+	    else
+#endif
+	    /* Keep initial / only if this is the whole name.  */
+	    if (o == target && IS_ANY_SEP (*o) && p[3] == 0)
+	      ++o;
+	    p += 3;
+	  }
+	else if (IS_DIRECTORY_SEP (p[1])
+		 && (p != target || IS_DIRECTORY_SEP (p[2])))
+	  /* Collapse multiple "/", except leave leading "//" alone.  */
+	  p++;
+	else
+	  {
+	    *o++ = *p++;
+	  }
+      }
+
+#ifdef DOS_NT
+    /* At last, set drive name.  */
+#ifdef WINDOWSNT
+    /* Except for network file name.  */
+    if (!(IS_DIRECTORY_SEP (target[0]) && IS_DIRECTORY_SEP (target[1])))
+#endif /* WINDOWSNT */
+      {
+	if (!drive) emacs_abort ();
+	target -= 2;
+	target[0] = DRIVE_LETTER (drive);
+	target[1] = ':';
+      }
+    /* Reinsert the escape prefix if required.  */
+    if (is_escaped)
+      {
+	target -= 2;
+	target[0] = '/';
+	target[1] = ':';
+      }
+    result = make_specified_string (target, -1, o - target, multibyte);
+    dostounix_filename (SSDATA (result));
+#ifdef WINDOWSNT
+    if (!NILP (Vw32_downcase_file_names))
+      result = Fdowncase (result);
+#endif
+#else  /* !DOS_NT */
+    result = make_specified_string (target, -1, o - target, multibyte);
+#endif /* !DOS_NT */
+  }
+
+  /* Again look to see if the file name has special constructs in it
+     and perhaps call the corresponding file name handler.  This is needed
+     for filenames such as "/foo/../user@host:/bar/../baz".  Expanding
+     the ".." component gives us "/user@host:/bar/../baz" which needs
+     to be expanded again.  */
+  handler = Ffind_file_name_handler (result, Qexpand_file_name);
+  if (!NILP (handler))
+    {
+      handled_name = call3 (handler, Qexpand_file_name,
+			    result, default_directory);
+      if (! STRINGP (handled_name))
+	error ("Invalid handler in `file-name-handler-alist'");
+      result = handled_name;
+    }
+
+  SAFE_FREE ();
+  return result;
+}
+
 void
 syms_of_fileio (void)
 {
@@ -5864,6 +6661,7 @@ This includes interactive calls to `delete-file' and
   defsubr (&Sset_buffer_auto_saved);
   defsubr (&Sclear_buffer_auto_save_failure);
   defsubr (&Srecent_auto_save_p);
+  defsubr (&Sexpand_file_name);
 
   defsubr (&Snext_read_file_uses_dialog_p);
 

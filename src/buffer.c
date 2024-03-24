@@ -1756,6 +1756,7 @@ other_buffer_safely (Lisp_Object buffer)
   buf = safe_call (1, Qget_scratch_buffer_create);
   if (NILP (buf))
     {
+      printf("debug1 init_scratch_buffer??\n");
       AUTO_STRING (scratch, "*scratch*");
       buf = Fget_buffer_create (scratch, Qnil);
       Fset_buffer_major_mode (buf);
@@ -4895,12 +4896,15 @@ init_buffer (void)
     Fset_buffer_multibyte (Qnil);
 
   char const *pwd = emacs_wd;
-
+  printf("debug2 init_scratch_buffer");
+  /* fprint_lisp_object(current_buffer, stdout); */
+  printf("\n");
   if (!pwd)
     {
       fprintf (stderr, "Error getting directory: %s\n",
                emacs_strerror (errno));
       bset_directory (current_buffer, Qnil);
+      printf("debug3??\n");
     }
   else
     {
@@ -4916,6 +4920,11 @@ init_buffer (void)
       if (add_slash)
 	SSET (dirname, len, DIRECTORY_SEP);
       bset_directory (current_buffer, dirname);
+      printf("debug4 %s??\n", SSDATA(dirname));
+      FILE *sstream = stdout;
+      fprintf(sstream, "  (cons :thread-name %ld\n", &(current_thread));
+      fprintf(sstream, "    (cons :default-directory ");fprint_lisp_object(BVAR (current_buffer, directory), sstream);fprintf(sstream, ")\n");
+      fprintf(sstream, "    (cons :thread-name ");fprint_lisp_object(current_thread->name, sstream);fprintf(sstream, ")\n");
 
       /* Add /: to the front of the name
          if it would otherwise be treated as magic.  */
