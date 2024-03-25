@@ -3,6 +3,8 @@
 # include "config.h"
 # include "lisp.h"
 
+#define ALIEN_INTERCOMM_ENABLED 1
+
 void alien_print_backtrace (void);
 void init_alien_intercomm (void);
 void alien_send_message (char* func, ptrdiff_t argc, Lisp_Object *argv);

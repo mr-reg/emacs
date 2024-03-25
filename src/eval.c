@@ -2387,6 +2387,7 @@ grow_specpdl_allocation (void)
 Lisp_Object
 eval_sub (Lisp_Object form)
 {
+  /* debug_lisp_object("eval_sub ", &form); */
   if (SYMBOLP (form))
     {
       /* Look up its binding in the lexical environment.
@@ -3013,6 +3014,13 @@ usage: (funcall FUNCTION &rest ARGUMENTS)  */)
 Lisp_Object
 funcall_subr (struct Lisp_Subr *subr, ptrdiff_t numargs, Lisp_Object *args)
 {
+  /* printf("funcall_subr %s ", subr->symbol_name); */
+  /* for (int argi = 0; argi < numargs; argi++ ) */
+  /*   { */
+  /*     fprint_lisp_object(args[argi], stdout); */
+  /*     printf(" "); */
+  /*   } */
+  /* printf("\n"); */
   eassume (numargs >= 0);
   if (numargs >= subr->min_args)
     {

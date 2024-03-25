@@ -116,7 +116,7 @@ emacs = LANG=C EMACS_TEST_DIRECTORY=$(abspath $(srcdir)) \
 # exists, or writing to ~/.bzr.log when running bzr commands).
 # NOTE if the '/nonexistent' name is changed `normal-top-level' in
 # startup.el must be updated too.
-TEST_HOME = /nonexistent
+TEST_HOME = ~
 
 test_module_dir := src/emacs-module-resources
 

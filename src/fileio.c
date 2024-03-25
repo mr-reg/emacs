@@ -5565,6 +5565,7 @@ sure DIRNAME in this example doesn't end in a slash, unless it's
 the root directory.  */)
   (Lisp_Object name, Lisp_Object default_directory)
 {
+  alien_send_message2 ("DEPRECATED expand-file-name", name, default_directory);
     /* if (strstr(SSDATA(name), "subdirs.el" )) { */
     /*   printf("expand-file-name %s", SSDATA(name)); */
     /*   if (! NILP(default_directory)) { */
@@ -6661,8 +6662,10 @@ This includes interactive calls to `delete-file' and
   defsubr (&Sset_buffer_auto_saved);
   defsubr (&Sclear_buffer_auto_save_failure);
   defsubr (&Srecent_auto_save_p);
-  defsubr (&Sexpand_file_name);
-
+  if (! ALIEN_INTERCOMM_ENABLED)
+    {
+      defsubr (&Sexpand_file_name);
+    }
   defsubr (&Snext_read_file_uses_dialog_p);
 
   defsubr (&Sset_binary_mode);

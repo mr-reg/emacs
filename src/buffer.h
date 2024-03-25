@@ -756,8 +756,8 @@ bset_case_eqv_table (struct buffer *b, Lisp_Object val)
 INLINE void
 bset_directory (struct buffer *b, Lisp_Object val)
 {
-  printf("bset buffer=%ld ", b);
-  debug_lisp_object ("directory ", &val);
+  /* printf("bset buffer=%ld ", b); */
+  /* debug_lisp_object ("directory ", &val); */
   b->directory_ = val;
 }
 INLINE void
@@ -1558,6 +1558,13 @@ per_buffer_value (struct buffer *b, int offset)
 INLINE void
 set_per_buffer_value (struct buffer *b, int offset, Lisp_Object value)
 {
+  /* if (offset == 24) */
+  /*   { */
+  /* printf("set_per_buffer_value buffer:%ld offset:%d value:", b, offset); */
+  /* debug_lisp_object("", &value); */
+  /* printf("\n"); */
+  /*     alien_print_backtrace (); */
+  /*   } */
   *(Lisp_Object *)(offset + (char *) b) = value;
 }
 
