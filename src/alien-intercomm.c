@@ -12,6 +12,7 @@
 /* #include <sys/resource.h> */
 /* #include <signal.h> */
 #include <threads.h>
+#include "lisp.h"
 
 
 #define ALIEN_BACKTRACE_LIMIT 500
@@ -19,7 +20,7 @@
 #define ulong unsigned long
 #define MESSAGE_TYPE_STOP_SERVER 100
 #define MESSAGE_TYPE_NOTIFY_S_EXPR 1
-#define MESSAGE_TYPE_ERROR 2
+#define MESSAGE_TYPE_SIGNAL 2
 #define MESSAGE_TYPE_RPC 3
 
 mtx_t intercomm_mutex;
@@ -285,7 +286,7 @@ Lisp_Object alien_rpc (char* func, ptrdiff_t argc, Lisp_Object *argv)
   FILE *sstream = open_memstream(&sbuffer, &sbuffer_len);
 
   fprintf(sstream, "(progn\n");
-  fprintf(sstream, "  (setf cl-emacs/elisp:*context* (list \n");
+  fprintf(sstream, "  (setf cl-emacs/elisp/internals:*context* (list \n");
 
   /* fprintf(sstream, "  (cons :emacs-wd ");fprint_lisp_object(build_string(emacs_wd), sstream);fprintf(sstream, ")\n"); */
   fprintf(sstream, "  (cons :interpreter-environment ");fprint_lisp_object(Vinternal_interpreter_environment, sstream);fprintf(sstream, ")\n");
@@ -326,10 +327,23 @@ Lisp_Object alien_rpc (char* func, ptrdiff_t argc, Lisp_Object *argv)
   Lisp_Object lisp_string = make_unibyte_string (response, message_length);
   free (response);
   /* printf("before read\n"); */
-  Lisp_Object result = Fcar(Fread_from_string(lisp_string, Qnil, Qnil));
   /* printf("after read\n"); */
 
   mtx_unlock(&intercomm_mutex);
+  Lisp_Object result = Feval( Fcar (Fread_from_string (lisp_string, Qnil, Qnil)), Qnil);
+  if (message_type == MESSAGE_TYPE_RPC)
+    {
+      // do nothing
+    }
+  else if (message_type == MESSAGE_TYPE_SIGNAL)
+    {
+      Fsignal(XCAR(result), XCDR(result));
+    }
+  else
+    {
+      printf("unknown message type %d", message_type);
+      alien_print_backtrace();
+    }
   /* if (strcmp(func, "cl-emacs/elisp:expand-file-name") == 0) */
   /* { */
   /*   Lisp_Object orig = Fexpand_file_name(argv[0], argv[1]); */

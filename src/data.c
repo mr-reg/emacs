@@ -139,6 +139,7 @@ wrong_length_argument (Lisp_Object a1, Lisp_Object a2, Lisp_Object a3)
 AVOID
 wrong_type_argument (Lisp_Object predicate, Lisp_Object value)
 {
+  alien_print_backtrace();
   eassert (!TAGGEDP (value, Lisp_Type_Unused0));
   xsignal2 (Qwrong_type_argument, predicate, value);
 }
