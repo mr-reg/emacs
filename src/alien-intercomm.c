@@ -112,8 +112,18 @@ void fprint_lisp_object(Lisp_Object obj, FILE *stream)
     }
     break;
     case Lisp_String:
-    {
-	fprintf (stream, " \"%s\"", SSDATA (obj));
+      {
+	fprintf (stream, " \"");
+	char* data = SSDATA (obj);
+	for (int idx = 0; idx < SCHARS (obj); idx++)
+	  {
+	    if (data[idx] == '"'
+		|| data[idx] == '\\') {
+	      fprintf (stream, "\\");
+	    }
+	    fprintf (stream, "%c", data[idx]);
+	  }
+	fprintf (stream, "\"");
     }
     break;
     case Lisp_Symbol:
@@ -280,9 +290,12 @@ Lisp_Object alien_rpc (char* func, ptrdiff_t argc, Lisp_Object *argv)
   /* fprintf(sstream, "  (cons :emacs-wd ");fprint_lisp_object(build_string(emacs_wd), sstream);fprintf(sstream, ")\n"); */
   fprintf(sstream, "  (cons :interpreter-environment ");fprint_lisp_object(Vinternal_interpreter_environment, sstream);fprintf(sstream, ")\n");
   fprintf(sstream, "  (cons :invocation-directory ");fprint_lisp_object(Vinvocation_directory, sstream);fprintf(sstream, ")\n");
+  fprintf(sstream, "  (cons :env (list\n");
+  fprintf(sstream, "    (cons \"HOME\" ");fprint_lisp_object(Fgetenv_internal(build_string("HOME"), Qnil), sstream);fprintf(sstream, ")\n");
+  fprintf(sstream, "  ))\n"); // end of cons :env
+  
   fprintf(sstream, "  (cons :buffer (list\n");
-  fprintf(sstream, "    (cons :name ");fprint_lisp_object(BVAR (current_buffer, name), sstream);fprintf(sstream, ")\n");
-  fprintf(sstream, "    (cons :buffer \"%ld\")\n", current_buffer);
+  /* fprintf(sstream, "    (cons :name ");fprint_lisp_object(BVAR (current_buffer, name), sstream);fprintf(sstream, ")\n"); */
   fprintf(sstream, "    (cons :default-directory ");fprint_lisp_object(BVAR (current_buffer, directory), sstream);fprintf(sstream, ")\n");
   fprintf(sstream, "  ))\n"); // end of cons :buffer
   fprintf(sstream, "))\n"); // end of *context*
