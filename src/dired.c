@@ -333,7 +333,7 @@ If COUNT is non-nil and a natural number, the function will return
   (Lisp_Object directory, Lisp_Object full, Lisp_Object match,
    Lisp_Object nosort, Lisp_Object count)
 {
-  directory = alien_rpc2("cl-emacs/elisp:expand-file-name", directory, Qnil);
+  directory = alien_rpc2("cl-emacs/elisp:elisp/expand-file-name", directory, Qnil);
 
   /* If the file name has special constructs in it,
      call the corresponding file name handler.  */
@@ -372,7 +372,7 @@ which see.  */)
   (Lisp_Object directory, Lisp_Object full, Lisp_Object match,
    Lisp_Object nosort, Lisp_Object id_format, Lisp_Object count)
 {
-  directory = alien_rpc2("cl-emacs/elisp:expand-file-name", directory, Qnil);
+  directory = alien_rpc2("cl-emacs/elisp:elisp/expand-file-name", directory, Qnil);
 
   /* If the file name has special constructs in it,
      call the corresponding file name handler.  */
@@ -408,7 +408,7 @@ is matched against file and directory names relative to DIRECTORY.  */)
   (Lisp_Object file, Lisp_Object directory, Lisp_Object predicate)
 {
   Lisp_Object handler;
-  directory = alien_rpc2("cl-emacs/elisp:expand-file-name", directory, Qnil);
+  directory = alien_rpc2("cl-emacs/elisp:elisp/expand-file-name", directory, Qnil);
 
   /* If the directory name has special constructs in it,
      call the corresponding file name handler.  */
@@ -436,7 +436,7 @@ is matched against file and directory names relative to DIRECTORY.  */)
   (Lisp_Object file, Lisp_Object directory)
 {
   Lisp_Object handler;
-  directory = alien_rpc2("cl-emacs/elisp:expand-file-name", directory, Qnil);
+  directory = alien_rpc2("cl-emacs/elisp:elisp/expand-file-name", directory, Qnil);
 
   /* If the directory name has special constructs in it,
      call the corresponding file name handler.  */
@@ -940,7 +940,7 @@ so last access time will always be midnight of that day.  */)
   Lisp_Object encoded;
   Lisp_Object handler;
 
-  filename = alien_rpc2("cl-emacs/elisp:expand-file-name", filename, Qnil);
+  filename = alien_rpc2("cl-emacs/elisp:elisp/expand-file-name", filename, Qnil);
   if (!STRINGP (filename))
     return Qnil;
 

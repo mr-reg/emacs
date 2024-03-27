@@ -491,7 +491,7 @@ See also `find-buffer-visiting'.  */)
   register Lisp_Object tail, buf, handler;
 
   CHECK_STRING (filename);
-  filename = alien_rpc2("cl-emacs/elisp:expand-file-name", filename, Qnil);
+  filename = alien_rpc2("cl-emacs/elisp:elisp/expand-file-name", filename, Qnil);
 
   /* If the file name has special constructs in it,
      call the corresponding file name handler.  */

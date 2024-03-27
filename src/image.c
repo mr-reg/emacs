@@ -3708,7 +3708,7 @@ image_find_image_fd (Lisp_Object file, int *pfd)
 
   /* TODO I think this should use something like image-load-path
      instead.  Unfortunately, that can contain non-string elements.  */
-  search_path = Fcons (alien_rpc2("cl-emacs/elisp:expand-file-name", build_string ("images"),
+  search_path = Fcons (alien_rpc2("cl-emacs/elisp:elisp/expand-file-name", build_string ("images"),
 					  Vdata_directory),
 		       Vx_bitmap_file_path);
 

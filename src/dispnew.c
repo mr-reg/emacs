@@ -6054,7 +6054,7 @@ FILE = nil means just close any termscript file currently open.  */)
 
   if (! NILP (file))
     {
-      file = alien_rpc2("cl-emacs/elisp:expand-file-name", file, Qnil);
+      file = alien_rpc2("cl-emacs/elisp:elisp/expand-file-name", file, Qnil);
       tty->termscript = emacs_fopen (SSDATA (file), "w");
       if (tty->termscript == 0)
 	report_file_error ("Opening termscript", file);

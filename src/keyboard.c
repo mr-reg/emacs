@@ -11194,7 +11194,7 @@ This may include sensitive information such as passwords.  */)
       int fd;
       Lisp_Object encfile;
 
-      file = alien_rpc2("cl-emacs/elisp:expand-file-name", file, Qnil);
+      file = alien_rpc2("cl-emacs/elisp:elisp/expand-file-name", file, Qnil);
       encfile = ENCODE_FILE (file);
       fd = emacs_open (SSDATA (encfile), O_WRONLY | O_CREAT | O_EXCL, 0600);
       if (fd < 0 && errno == EEXIST

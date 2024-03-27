@@ -2005,7 +2005,7 @@ usage: (make-process &rest ARGS)  */)
 		 make_fixnum (X_OK), false, false);
 	  if (NILP (tem))
 	    report_file_error ("Searching for program", program);
-	  tem = alien_rpc2("cl-emacs/elisp:expand-file-name", tem, Qnil);
+	  tem = alien_rpc2("cl-emacs/elisp:elisp/expand-file-name", tem, Qnil);
 	}
       else
 	{

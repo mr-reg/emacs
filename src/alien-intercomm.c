@@ -142,7 +142,15 @@ void fprint_lisp_object(Lisp_Object obj, FILE *stream, int toplevel)
 	{
 	  fprintf (stream, "'");
 	}
-      fprintf (stream, "%s", symbol_name);
+
+	for (int idx = 0; idx < strlen(symbol_name); idx++)
+	  {
+	    char c = symbol_name[idx];
+	    if ((c >= 'A' && c <= 'Z') || c == '_') {
+	      fprintf (stream, "_");
+	    }
+	    fprintf (stream, "%c", c);
+	  }
     }
     break;
     case Lisp_Cons:
@@ -302,7 +310,13 @@ Lisp_Object alien_rpc (char* func, ptrdiff_t argc, Lisp_Object *argv)
   
   fprintf(sstream, "  (cons :buffer (list\n");
   /* fprintf(sstream, "    (cons :name ");fprint_lisp_object(BVAR (current_buffer, name), sstream);fprintf(sstream, ")\n"); */
-  fprintf(sstream, "    (cons :default-directory ");fprint_lisp_object(BVAR (current_buffer, directory), sstream, 0);fprintf(sstream, ")\n");
+  if (current_buffer)
+    {
+      fprintf (sstream, "    (cons :default-directory ");
+      fprint_lisp_object (BVAR (current_buffer, directory), sstream,
+			  0);
+      fprintf (sstream, ")\n");
+    }
   fprintf(sstream, "  ))\n"); // end of cons :buffer
   fprintf(sstream, "))\n"); // end of *context*
  
@@ -350,7 +364,7 @@ Lisp_Object alien_rpc (char* func, ptrdiff_t argc, Lisp_Object *argv)
       printf("unknown message type %ld", message_type);
       alien_print_backtrace();
     }
-  /* if (strcmp(func, "cl-emacs/elisp:expand-file-name") == 0) */
+  /* if (strcmp(func, "elisp/expand-file-name") == 0) */
   /* { */
   /*   Lisp_Object orig = Fexpand_file_name(argv[0], argv[1]); */
   /*   if (NILP(Fstring_equal(orig, result))) { */

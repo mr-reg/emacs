@@ -952,7 +952,7 @@ append to existing target file.  */)
 
   if (! NILP (file))
     {
-      file = alien_rpc2("cl-emacs/elisp:expand-file-name", file, Qnil);
+      file = alien_rpc2("cl-emacs/elisp:elisp/expand-file-name", file, Qnil);
 
       if (stderr_dup == STDERR_FILENO)
 	{

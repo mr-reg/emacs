@@ -2273,7 +2273,7 @@ void
 init_charset (void)
 {
   Lisp_Object tempdir;
-  tempdir = alien_rpc2("cl-emacs/elisp:expand-file-name", build_string ("charsets"), Vdata_directory);
+  tempdir = alien_rpc2("cl-emacs/elisp:elisp/expand-file-name", build_string ("charsets"), Vdata_directory);
   if (! file_accessible_directory_p (tempdir))
     {
       /* This used to be non-fatal (dir_warning), but it should not

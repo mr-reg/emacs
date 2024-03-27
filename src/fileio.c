@@ -640,8 +640,8 @@ static Lisp_Object
 expand_cp_target (Lisp_Object file, Lisp_Object newname)
 {
   return (!NILP (Fdirectory_name_p (newname))
-	  ? alien_rpc2("cl-emacs/elisp:expand-file-name", Ffile_name_nondirectory (file), newname)
-	  : alien_rpc2("cl-emacs/elisp:expand-file-name", newname, Qnil));
+	  ? alien_rpc2("cl-emacs/elisp:elisp/expand-file-name", Ffile_name_nondirectory (file), newname)
+	  : alien_rpc2("cl-emacs/elisp:elisp/expand-file-name", newname, Qnil));
 }
 
 DEFUN ("directory-file-name", Fdirectory_file_name, Sdirectory_file_name,
@@ -1138,7 +1138,7 @@ those `/' is discarded.  */)
 Lisp_Object
 expand_and_dir_to_file (Lisp_Object filename)
 {
-  Lisp_Object absname = alien_rpc2("cl-emacs/elisp:expand-file-name", filename, Qnil);
+  Lisp_Object absname = alien_rpc2("cl-emacs/elisp:elisp/expand-file-name", filename, Qnil);
 
   /* Remove final slash, if any (unless this is the root dir).
      stat behaves differently depending!  */
@@ -1262,7 +1262,7 @@ permissions.  */)
   struct stat st;
 #endif
 
-  file = alien_rpc2("cl-emacs/elisp:expand-file-name", file, Qnil);
+  file = alien_rpc2("cl-emacs/elisp:elisp/expand-file-name", file, Qnil);
   newname = expand_cp_target (file, newname);
 
   /* If the input file name has special constructs in it,
@@ -1513,7 +1513,7 @@ DEFUN ("make-directory-internal", Fmake_directory_internal,
   Lisp_Object encoded_dir;
 
   CHECK_STRING (directory);
-  directory = alien_rpc2("cl-emacs/elisp:expand-file-name", directory, Qnil);
+  directory = alien_rpc2("cl-emacs/elisp:elisp/expand-file-name", directory, Qnil);
 
   encoded_dir = ENCODE_FILE (directory);
 
@@ -1535,7 +1535,7 @@ DEFUN ("delete-directory-internal", Fdelete_directory_internal,
   Lisp_Object encoded_dir;
 
   CHECK_STRING (directory);
-  directory = Fdirectory_file_name (alien_rpc2("cl-emacs/elisp:expand-file-name", directory, Qnil));
+  directory = Fdirectory_file_name (alien_rpc2("cl-emacs/elisp:elisp/expand-file-name", directory, Qnil));
   encoded_dir = ENCODE_FILE (directory);
   dir = SSDATA (encoded_dir);
 
@@ -1569,7 +1569,7 @@ With a prefix argument, TRASH is nil.  */)
     xsignal2 (Qfile_error,
 	      build_string ("Removing old name: is a directory"),
 	      filename);
-  filename = alien_rpc2("cl-emacs/elisp:expand-file-name", filename, Qnil);
+  filename = alien_rpc2("cl-emacs/elisp:elisp/expand-file-name", filename, Qnil);
 
   handler = Ffind_file_name_handler (filename, Qdelete_file);
   if (!NILP (handler))
@@ -1665,7 +1665,7 @@ is case-insensitive.  */)
   Lisp_Object handler;
 
   CHECK_STRING (filename);
-  filename = alien_rpc2("cl-emacs/elisp:expand-file-name", filename, Qnil);
+  filename = alien_rpc2("cl-emacs/elisp:elisp/expand-file-name", filename, Qnil);
 
   /* If the file name has special constructs in it,
      call the corresponding file name handler.  */
@@ -1709,7 +1709,7 @@ This is what happens in interactive use with M-x.  */)
   Lisp_Object handler;
   Lisp_Object encoded_file, encoded_newname;
 
-  file = alien_rpc2("cl-emacs/elisp:expand-file-name", file, Qnil);
+  file = alien_rpc2("cl-emacs/elisp:elisp/expand-file-name", file, Qnil);
 
   /* If the filesystem is case-insensitive and the file names are
      identical but for case, treat it as a change-case request, and do
@@ -1719,7 +1719,7 @@ This is what happens in interactive use with M-x.  */)
 #if defined CYGWIN || defined DOS_NT
   if (!NILP (Ffile_name_case_insensitive_p (file)))
     {
-      newname = alien_rpc2("cl-emacs/elisp:expand-file-name", newname, Qnil);
+      newname = alien_rpc2("cl-emacs/elisp:elisp/expand-file-name", newname, Qnil);
       case_only_rename = !NILP (Fstring_equal (Fdowncase (file),
 					       Fdowncase (newname)));
     }
@@ -1845,7 +1845,7 @@ This is what happens in interactive use with M-x.  */)
   Lisp_Object handler;
   Lisp_Object encoded_file, encoded_newname;
 
-  file = alien_rpc2("cl-emacs/elisp:expand-file-name", file, Qnil);
+  file = alien_rpc2("cl-emacs/elisp:elisp/expand-file-name", file, Qnil);
   newname = expand_cp_target (file, newname);
 
   /* If the file name has special constructs in it,
@@ -1904,7 +1904,7 @@ This happens for interactive use with M-x.  */)
   if (FIXNUMP (ok_if_already_exists))
     {
       if (SREF (target, 0) == '~')
-	target = alien_rpc2("cl-emacs/elisp:expand-file-name", target, Qnil);
+	target = alien_rpc2("cl-emacs/elisp:elisp/expand-file-name", target, Qnil);
       else if (SREF (target, 0) == '/' && SREF (target, 1) == ':')
 	target = Fsubstring_no_properties (target, make_fixnum (2), Qnil);
     }
@@ -1970,7 +1970,7 @@ file_name_absolute_p (char const *filename)
 static Lisp_Object
 check_file_access (Lisp_Object file, Lisp_Object operation, int amode)
 {
-  file = alien_rpc2("cl-emacs/elisp:expand-file-name", file, Qnil);
+  file = alien_rpc2("cl-emacs/elisp:elisp/expand-file-name", file, Qnil);
   Lisp_Object handler = Ffind_file_name_handler (file, operation);
   if (!NILP (handler))
     {
@@ -2031,7 +2031,7 @@ DEFUN ("file-writable-p", Ffile_writable_p, Sfile_writable_p, 1, 1, 0,
     dir, encoded;
   Lisp_Object handler;
 
-  absname = alien_rpc2("cl-emacs/elisp:expand-file-name", filename, Qnil);
+  absname = alien_rpc2("cl-emacs/elisp:elisp/expand-file-name", filename, Qnil);
 
   /* If the file name has special constructs in it,
      call the corresponding file name handler.  */
@@ -2074,7 +2074,7 @@ If there is no error, returns nil.  */)
     encoded_filename, absname;
 
   CHECK_STRING (filename);
-  absname = alien_rpc2("cl-emacs/elisp:expand-file-name", filename, Qnil);
+  absname = alien_rpc2("cl-emacs/elisp:elisp/expand-file-name", filename, Qnil);
 
   CHECK_STRING (string);
 
@@ -2147,7 +2147,7 @@ This function does not check whether the link target exists.  */)
   Lisp_Object handler;
 
   CHECK_STRING (filename);
-  filename = alien_rpc2("cl-emacs/elisp:expand-file-name", filename, Qnil);
+  filename = alien_rpc2("cl-emacs/elisp:elisp/expand-file-name", filename, Qnil);
 
   /* If the file name has special constructs in it,
      call the corresponding file name handler.  */
@@ -2249,7 +2249,7 @@ predicate must return true.  */)
   Lisp_Object handler;
 
   CHECK_STRING (filename);
-  absname = alien_rpc2("cl-emacs/elisp:expand-file-name", filename, Qnil);
+  absname = alien_rpc2("cl-emacs/elisp:elisp/expand-file-name", filename, Qnil);
 
   /* If the file name has special constructs in it,
      call the corresponding file name handler.  */
@@ -2443,7 +2443,7 @@ or if Emacs was not compiled with SELinux support.  */)
   context_t parsed_con;
 #endif
 
-  absname = alien_rpc2("cl-emacs/elisp:expand-file-name", filename, BVAR (current_buffer, directory));
+  absname = alien_rpc2("cl-emacs/elisp:elisp/expand-file-name", filename, BVAR (current_buffer, directory));
 
   /* If the file name has special constructs in it,
      call the corresponding file name handler.  */
@@ -2572,7 +2572,7 @@ support.  */)
   bool fail;
 # endif
 
-  absname = alien_rpc2("cl-emacs/elisp:expand-file-name", filename, BVAR (current_buffer, directory));
+  absname = alien_rpc2("cl-emacs/elisp:elisp/expand-file-name", filename, BVAR (current_buffer, directory));
 
   /* If the file name has special constructs in it,
      call the corresponding file name handler.  */
@@ -2655,7 +2655,7 @@ command from GNU Coreutils.  */)
 		      flag );
   CHECK_FIXNUM (mode);
   int nofollow = symlink_nofollow_flag (flag);
-  Lisp_Object absname = alien_rpc2("cl-emacs/elisp:expand-file-name", filename,
+  Lisp_Object absname = alien_rpc2("cl-emacs/elisp:elisp/expand-file-name", filename,
 					   BVAR (current_buffer, directory));
 
   /* If the file name has special constructs in it,
@@ -2737,7 +2737,7 @@ TIMESTAMP is in the format of `current-time'. */)
   /* If the file name has special constructs in it,
      call the corresponding file name handler.  */
   Lisp_Object
-    absname = alien_rpc2("cl-emacs/elisp:expand-file-name", filename, BVAR (current_buffer, directory)),
+    absname = alien_rpc2("cl-emacs/elisp:elisp/expand-file-name", filename, BVAR (current_buffer, directory)),
     handler = Ffind_file_name_handler (absname, Qset_file_times);
   if (!NILP (handler))
     return call4 (handler, Qset_file_times, absname, timestamp, flag);
@@ -3099,7 +3099,7 @@ by calling `format-decode', which see.  */)
   old_undo = Qnil;
 
   CHECK_STRING (filename);
-  filename = alien_rpc2("cl-emacs/elisp:expand-file-name", filename, Qnil);
+  filename = alien_rpc2("cl-emacs/elisp:elisp/expand-file-name", filename, Qnil);
 
   /* The value Qnil means that the coding system is not yet
      decided.  */
@@ -4377,13 +4377,13 @@ write_region (Lisp_Object start, Lisp_Object end, Lisp_Object filename,
 
   visit_file = Qnil;
 
-  filename = alien_rpc2("cl-emacs/elisp:expand-file-name", filename, Qnil);
+  filename = alien_rpc2("cl-emacs/elisp:elisp/expand-file-name", filename, Qnil);
 
   if (!NILP (mustbenew) && !EQ (mustbenew, Qexcl))
     barf_or_query_if_file_exists (filename, false, "overwrite", true, true);
 
   if (STRINGP (visit))
-    visit_file = alien_rpc2("cl-emacs/elisp:expand-file-name", visit, Qnil);
+    visit_file = alien_rpc2("cl-emacs/elisp:elisp/expand-file-name", visit, Qnil);
   else
     visit_file = filename;
 
@@ -5037,7 +5037,7 @@ in `current-time' or an integer flag as returned by `visited-file-modtime'.  */)
       struct stat st;
       Lisp_Object handler;
 
-      filename = alien_rpc2("cl-emacs/elisp:expand-file-name", BVAR (current_buffer, filename), Qnil);
+      filename = alien_rpc2("cl-emacs/elisp:elisp/expand-file-name", BVAR (current_buffer, filename), Qnil);
 
       /* If the file name has special constructs in it,
 	 call the corresponding file name handler.  */
@@ -5196,7 +5196,7 @@ A non-nil CURRENT-ONLY argument means save only current buffer.  */)
     {
       Lisp_Object listfile;
 
-      listfile = alien_rpc2("cl-emacs/elisp:expand-file-name", Vauto_save_list_file_name, Qnil);
+      listfile = alien_rpc2("cl-emacs/elisp:elisp/expand-file-name", Vauto_save_list_file_name, Qnil);
 
       /* Don't try to create the directory when shutting down Emacs,
          because creating the directory might signal an error, and
@@ -5480,7 +5480,7 @@ If the underlying system call fails, value is nil.  */)
 {
   alien_send_message1("file-system-info", filename );
   filename
-    = alien_rpc2("cl-emacs/elisp:expand-file-name", filename, Qnil);
+    = alien_rpc2("cl-emacs/elisp:elisp/expand-file-name", filename, Qnil);
 
   /* If the file name has special constructs in it,
      call the corresponding file name handler.  */

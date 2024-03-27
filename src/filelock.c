@@ -655,7 +655,7 @@ static Lisp_Object
 make_lock_file_name (Lisp_Object fn)
 {
   Lisp_Object lock_file_name = call1 (Qmake_lock_file_name,
-				      alien_rpc2("cl-emacs/elisp:expand-file-name", fn, Qnil));
+				      alien_rpc2("cl-emacs/elisp:elisp/expand-file-name", fn, Qnil));
   return !NILP (lock_file_name) ? ENCODE_FILE (lock_file_name) : Qnil;
 }
 
