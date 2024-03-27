@@ -98,23 +98,23 @@ static int open_intercomm_connection (void)
 }
 
 
-void fprint_lisp_object(Lisp_Object obj, FILE *stream)
+void fprint_lisp_object(Lisp_Object obj, FILE *stream, int toplevel)
 {
   switch (XTYPE (obj))
     {
     case_Lisp_Int:
     {
-	fprintf (stream, " %ld", XFIXNUM (obj));
+	fprintf (stream, "%ld", XFIXNUM (obj));
     }
     break;
     case Lisp_Float:
     {
-	fprintf (stream, " %lf", XFLOAT_DATA (obj));
+	fprintf (stream, "%lf", XFLOAT_DATA (obj));
     }
     break;
     case Lisp_String:
       {
-	fprintf (stream, " \"");
+	fprintf (stream, "\"");
 	char* data = SSDATA (obj);
 	for (int idx = 0; idx < SCHARS (obj); idx++)
 	  {
@@ -132,20 +132,25 @@ void fprint_lisp_object(Lisp_Object obj, FILE *stream)
       char* symbol_name = SSDATA (SYMBOL_NAME (obj));
       if (strcmp(symbol_name, "`") == 0)
 	  {
-	    symbol_name = "backquote";
+	    symbol_name = (char*)"backquote";
 	  }
       if (strcmp(symbol_name, ",") == 0)
 	  {
-	    symbol_name = "comma";
+	    symbol_name = (char*)"comma";
 	  }
-      fprintf (stream, " '%s", symbol_name);
+      if (toplevel)
+	{
+	  fprintf (stream, "'");
+	}
+      fprintf (stream, "%s", symbol_name);
     }
     break;
     case Lisp_Cons:
     {
-	fprintf (stream, " (cons");
-	fprint_lisp_object (XCAR (obj), stream);
-	fprint_lisp_object (XCDR (obj), stream);
+	fprintf (stream, "(cons ");
+	fprint_lisp_object (XCAR (obj), stream, 1);
+	fprintf (stream, " ");
+	fprint_lisp_object (XCDR (obj), stream, 1);
 	fprintf (stream, ")");
     }
     break;
@@ -153,19 +158,19 @@ void fprint_lisp_object(Lisp_Object obj, FILE *stream)
     {
 	enum pvec_type vector_type
 	  = PSEUDOVECTOR_TYPE (XVECTOR (obj));
-	fprintf (stream, " \"unsupported vector type %d\"",
+	fprintf (stream, "\"unsupported vector type %d\"",
 		 vector_type);
     }
     break;
     default:
-      fprintf(stream, " 'unsupported");
+      fprintf(stream, "\"unsupported\"");
     }
 }
 
 void debug_lisp_object (const char* message, Lisp_Object *obj)
 {
   printf("%s ", message);
-  fprint_lisp_object(*obj, stdout);
+  fprint_lisp_object(*obj, stdout, 1);
   printf("\n");
 }
 
@@ -190,7 +195,7 @@ void alien_send_message (char* func, ptrdiff_t argc, Lisp_Object *argv)
     fprintf(sstream, "(%s", func);
     for (int argi = 0; argi < argc; argi++)
       {
-	fprint_lisp_object (argv[argi], sstream);
+	fprint_lisp_object (argv[argi], sstream, 1);
       }
     fprintf (sstream, ")");
     fprintf (sstream, "%c", 0);
@@ -289,22 +294,23 @@ Lisp_Object alien_rpc (char* func, ptrdiff_t argc, Lisp_Object *argv)
   fprintf(sstream, "  (setf cl-emacs/elisp/internals:*context* (list \n");
 
   /* fprintf(sstream, "  (cons :emacs-wd ");fprint_lisp_object(build_string(emacs_wd), sstream);fprintf(sstream, ")\n"); */
-  fprintf(sstream, "  (cons :interpreter-environment ");fprint_lisp_object(Vinternal_interpreter_environment, sstream);fprintf(sstream, ")\n");
-  fprintf(sstream, "  (cons :invocation-directory ");fprint_lisp_object(Vinvocation_directory, sstream);fprintf(sstream, ")\n");
+  fprintf(sstream, "  (cons :interpreter-environment ");fprint_lisp_object(Vinternal_interpreter_environment, sstream, 0);fprintf(sstream, ")\n");
+  fprintf(sstream, "  (cons :invocation-directory ");fprint_lisp_object(Vinvocation_directory, sstream, 0);fprintf(sstream, ")\n");
   fprintf(sstream, "  (cons :env (list\n");
-  fprintf(sstream, "    (cons \"HOME\" ");fprint_lisp_object(Fgetenv_internal(build_string("HOME"), Qnil), sstream);fprintf(sstream, ")\n");
+  fprintf(sstream, "    (cons \"HOME\" ");fprint_lisp_object(Fgetenv_internal(build_string("HOME"), Qnil), sstream, 0);fprintf(sstream, ")\n");
   fprintf(sstream, "  ))\n"); // end of cons :env
   
   fprintf(sstream, "  (cons :buffer (list\n");
   /* fprintf(sstream, "    (cons :name ");fprint_lisp_object(BVAR (current_buffer, name), sstream);fprintf(sstream, ")\n"); */
-  fprintf(sstream, "    (cons :default-directory ");fprint_lisp_object(BVAR (current_buffer, directory), sstream);fprintf(sstream, ")\n");
+  fprintf(sstream, "    (cons :default-directory ");fprint_lisp_object(BVAR (current_buffer, directory), sstream, 0);fprintf(sstream, ")\n");
   fprintf(sstream, "  ))\n"); // end of cons :buffer
   fprintf(sstream, "))\n"); // end of *context*
  
   fprintf(sstream, "(%s", func);
   for (int argi = 0; argi < argc; argi++)
     {
-      fprint_lisp_object(argv[argi], sstream);
+      fprintf(sstream, " ");
+      fprint_lisp_object(argv[argi], sstream, 1);
     }
   fprintf(sstream, ")\n"); //end of function
   fprintf(sstream, ")\n"); //end of progn
@@ -341,7 +347,7 @@ Lisp_Object alien_rpc (char* func, ptrdiff_t argc, Lisp_Object *argv)
     }
   else
     {
-      printf("unknown message type %d", message_type);
+      printf("unknown message type %ld", message_type);
       alien_print_backtrace();
     }
   /* if (strcmp(func, "cl-emacs/elisp:expand-file-name") == 0) */
@@ -385,11 +391,11 @@ Lisp_Object alien_rpc2(const char* func, Lisp_Object arg0, Lisp_Object arg1)
 }
 
 
-DEFUN ("common-lisp", Fcommon_lisp, Scommon_lisp, 1, 1, 0,
+DEFUN ("common-lisp-apply", Fcommon_lisp_apply, Scommon_lisp_apply, 1, 2, 0,
        doc: /* Common lisp bridge */)
-  (Lisp_Object form)
+  (Lisp_Object function, Lisp_Object arglist)
 {
-  return alien_rpc1((char*)"progn", form);
+  return alien_rpc2((char*)"apply", function, arglist);
 }
 
 DEFUN ("common-lisp-init", Fcommon_lisp_init, Scommon_lisp_init, 0, 0, 0,
@@ -406,7 +412,7 @@ init_alien_intercomm (void)
   printf("sizeof(union vectorlike_header)=%ld\n", sizeof(union vectorlike_header));
   printf("sizeof(Lisp_Object)=%ld\n", sizeof(Lisp_Object));
   mtx_init(&intercomm_mutex, mtx_plain);
-  defsubr (&Scommon_lisp);
+  defsubr (&Scommon_lisp_apply);
   defsubr (&Scommon_lisp_init);
   if (ALIEN_INTERCOMM_ENABLED) 
   {

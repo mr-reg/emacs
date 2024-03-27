@@ -4920,7 +4920,7 @@ init_buffer (void)
 	SSET (dirname, len, DIRECTORY_SEP);
       bset_directory (current_buffer, dirname);
       /* printf("debug4 %s??\n", SSDATA(dirname)); */
-      FILE *sstream = stdout;
+      /* FILE *sstream = stdout; */
       /* fprintf(sstream, "  (cons :thread-name %ld\n", &(current_thread)); */
       /* fprintf(sstream, "    (cons :default-directory ");fprint_lisp_object(BVAR (current_buffer, directory), sstream);fprintf(sstream, ")\n"); */
       /* fprintf(sstream, "    (cons :thread-name ");fprint_lisp_object(current_thread->name, sstream);fprintf(sstream, ")\n"); */
