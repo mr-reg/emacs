@@ -97,6 +97,60 @@ static int open_intercomm_connection (void)
   return intercomm_socket;
 }
 
+void fprint_lisp_binary_object(Lisp_Object obj, File *stream) {
+  switch (XTYPE (obj))
+    {
+    case_Lisp_Int:
+    {
+	fprintf (stream, "I%ld", XFIXNUM (obj));
+    }
+    break;
+    case Lisp_Float:
+    {
+	fprintf (stream, "D%lf", XFLOAT_DATA (obj));
+    }
+    break;
+    case Lisp_String:
+      {
+	long len = SCHARS (obj);
+	char* data = SSDATA (obj);
+	fprintf (stream, "A%ld", len);;
+	for (int idx = 0; idx < len; idx++)
+	  {
+	    fprintf (stream, "%c", data[idx]);
+	  }
+    }
+    break;
+    case Lisp_Symbol:
+    {
+      long len = SCHARS (SYMBOL_NAME (obj));
+      char* data = SSDATA (SYMBOL_NAME (obj));
+      fprintf (stream, "S%ld", len);;
+      for (int idx = 0; idx < len; idx++)
+	{
+	  fprintf (stream, "%c", data[idx]);
+	}
+    }
+    break;
+    case Lisp_Cons:
+    {
+	fprintf (stream, "C");
+	fprint_lisp_binary_object (XCAR (obj), stream);
+	fprint_lisp_binary_object (XCDR (obj), stream);
+    }
+    break;
+    case Lisp_Vectorlike:
+    {
+	enum pvec_type vector_type
+	  = PSEUDOVECTOR_TYPE (XVECTOR (obj));
+	fprintf (stream, "\"unsupported vector type %d\"",
+		 vector_type);
+    }
+    break;
+    default:
+      fprintf(stream, "\"unsupported\"");
+    }
+}
 
 void fprint_lisp_object(Lisp_Object obj, FILE *stream, int toplevel)
 {
