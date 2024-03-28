@@ -150,6 +150,7 @@ extern char etext;
 #include "thread.h"
 
 #include "alien-intercomm.h"
+#include "alien-injection.c"
 
 static const char emacs_version[] = PACKAGE_VERSION;
 static const char emacs_copyright[] = COPYRIGHT;
@@ -1888,6 +1889,7 @@ Using an Emacs configured with --with-x-toolkit=lucid does not have this problem
       init_pdumper_once ();
       init_obarray_once ();
       init_eval_once ();
+  init_alien_injection ();
       init_charset_once ();
       init_coding_once ();
       init_syntax_once ();	/* Create standard syntax table.  */

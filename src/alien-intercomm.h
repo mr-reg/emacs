@@ -31,4 +31,5 @@ void debug_lisp_object (const char* message, Lisp_Object *obj);
 
 EXFUN (Fcommon_lisp, 1);
 EXFUN (Fcommon_lisp_init, 0);
+
 #endif

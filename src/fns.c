@@ -1874,7 +1874,7 @@ The value is actually the tail of LIST whose car is ELT.  */)
   (Lisp_Object elt, Lisp_Object list)
 {
   if (eq_comparable_value (elt))
-    return alien_rpc2("cl-emacs/elisp:elisp/memq", elt, list);
+    return Fmemq(elt, list); //alien_rpc2("cl-emacs/elisp:elisp/memq", elt, list);
   Lisp_Object tail = list;
   FOR_EACH_TAIL (tail)
     if (! NILP (Fequal (elt, XCAR (tail))))
@@ -6316,10 +6316,10 @@ The same variable also affects the function `read-answer'.  */);
   defsubr (&Snth);
   defsubr (&Selt);
   defsubr (&Smember);
-  if (! ALIEN_INTERCOMM_ENABLED)
-    {
+  /* if (! ALIEN_INTERCOMM_ENABLED) */
+  /*   { */
       defsubr (&Smemq);
-    }
+    /* } */
   defsubr (&Smemql);
   defsubr (&Sassq);
   defsubr (&Sassoc);

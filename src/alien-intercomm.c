@@ -428,10 +428,11 @@ init_alien_intercomm (void)
   mtx_init(&intercomm_mutex, mtx_plain);
   defsubr (&Scommon_lisp_apply);
   defsubr (&Scommon_lisp_init);
-  if (ALIEN_INTERCOMM_ENABLED) 
-  {
-    Fcommon_lisp_init();
-  }
+  /* if (ALIEN_INTERCOMM_ENABLED)  */
+  /* { */
+  /*   Fcommon_lisp_init(); */
+  /* } */
+
   /* char path[] = "subdirs.el"; */
   /* Lisp_Object debug = Fexpand_file_name(build_string(path), Qnil); */
   /* printf("debug:"); */
