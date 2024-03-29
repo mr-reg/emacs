@@ -97,60 +97,125 @@ static int open_intercomm_connection (void)
   return intercomm_socket;
 }
 
-void fprint_lisp_binary_object(Lisp_Object obj, File *stream) {
+void fwrite_lisp_binary_object(Lisp_Object obj, FILE *stream) {
+  char type = 0;
   switch (XTYPE (obj))
     {
     case_Lisp_Int:
     {
-	fprintf (stream, "I%ld", XFIXNUM (obj));
+      long value = XFIXNUM (obj);
+      type = 'I';
+      fwrite(&type, 1, 1, stream);
+      fwrite(&value, sizeof(long), 1, stream);
     }
     break;
     case Lisp_Float:
     {
-	fprintf (stream, "D%lf", XFLOAT_DATA (obj));
+      double value = XFLOAT_DATA (obj);
+      type = 'D';
+      fwrite(&type, 1, 1, stream);
+      fwrite(&value, sizeof(double), 1, stream);
     }
     break;
     case Lisp_String:
       {
 	long len = SCHARS (obj);
 	char* data = SSDATA (obj);
-	fprintf (stream, "A%ld", len);;
-	for (int idx = 0; idx < len; idx++)
-	  {
-	    fprintf (stream, "%c", data[idx]);
-	  }
+	type = 'A';
+	fwrite(&type, 1, 1, stream);
+	fwrite(&len, sizeof(long), 1, stream);
+	/* printf("%ld %s\n", len, data); */
+	fwrite(data, 1, len, stream);
     }
     break;
     case Lisp_Symbol:
     {
       long len = SCHARS (SYMBOL_NAME (obj));
       char* data = SSDATA (SYMBOL_NAME (obj));
-      fprintf (stream, "S%ld", len);;
-      for (int idx = 0; idx < len; idx++)
-	{
-	  fprintf (stream, "%c", data[idx]);
-	}
+      type = 'S';
+      fwrite(&type, 1, 1, stream);
+      fwrite(&len, sizeof(long), 1, stream);
+      fwrite(data, 1, len, stream);
     }
     break;
     case Lisp_Cons:
     {
-	fprintf (stream, "C");
-	fprint_lisp_binary_object (XCAR (obj), stream);
-	fprint_lisp_binary_object (XCDR (obj), stream);
+      type = 'C';
+      fwrite(&type, 1, 1, stream);
+      fwrite_lisp_binary_object (XCAR (obj), stream);
+      fwrite_lisp_binary_object (XCDR (obj), stream);
     }
     break;
     case Lisp_Vectorlike:
     {
-	enum pvec_type vector_type
-	  = PSEUDOVECTOR_TYPE (XVECTOR (obj));
-	fprintf (stream, "\"unsupported vector type %d\"",
-		 vector_type);
+      char str[100];
+      enum pvec_type vector_type = PSEUDOVECTOR_TYPE (XVECTOR (obj));
+      sprintf(str, "unsupported vector type %d",
+	      vector_type);
+      fwrite_lisp_binary_object (build_string(str), stream);
     }
     break;
     default:
-      fprintf(stream, "\"unsupported\"");
+      fwrite_lisp_binary_object (build_string("unsupported type"), stream);
     }
 }
+
+Lisp_Object fread_lisp_binary_object(FILE *stream) {
+  Lisp_Object result = Qnil;
+  char c;
+  fread(&c, 1, 1, stream);
+  switch (c)
+    {
+    case 'I':
+    {
+      long value = 0;
+      fread (&value, sizeof(long), 1, stream);
+      result = make_fixnum(value);
+    }
+    break;
+    case 'D':
+    {
+      double value = 0;
+      fread(&value, sizeof(double), 1, stream);
+      result = make_float(value);
+    }
+    break;
+    case 'A':
+      {
+	long len = 0;
+	fread (&len, sizeof(long), 1, stream);
+	char* data = malloc(len + 1);
+	fread (data, 1, len, stream);
+	data[len] = 0;
+	result = make_string(data, len);
+	/* printf("type %ld\n", XTYPE(result)); */
+	free (data);
+    }
+    break;
+    case 'S':
+    {
+	long len = 0;
+	fread (&len, sizeof(long), 1, stream);
+	char* data = malloc(len + 1);
+	fread (data, 1, len, stream);
+	data[len] = 0;
+	result = intern(data);
+	free (data);
+    }
+    break;
+    case 'C':
+    {
+      Lisp_Object car = fread_lisp_binary_object(stream);
+      Lisp_Object cdr = fread_lisp_binary_object(stream);
+      result = pure_cons(car, cdr);
+    }
+    break;
+    default:
+      result = build_string("unsupported type");
+    }
+  return result;
+}
+
 
 void fprint_lisp_object(Lisp_Object obj, FILE *stream, int toplevel)
 {
@@ -229,10 +294,10 @@ void fprint_lisp_object(Lisp_Object obj, FILE *stream, int toplevel)
     }
 }
 
-void debug_lisp_object (const char* message, Lisp_Object *obj)
+void debug_lisp_object (const char* message, Lisp_Object obj)
 {
   printf("%s ", message);
-  fprint_lisp_object(*obj, stdout, 1);
+  fprint_lisp_object(obj, stdout, 1);
   printf("\n");
 }
 
@@ -254,13 +319,18 @@ void alien_send_message (char* func, ptrdiff_t argc, Lisp_Object *argv)
     char *sbuffer;
     size_t sbuffer_len;
     FILE *sstream = open_memstream(&sbuffer, &sbuffer_len);
-    fprintf(sstream, "(%s", func);
+    /* fwrite_lisp_binary_object(make_fixnum(argc + 1), stdout); */
+    /* printf("AAAA"); */
+    /* fwrite_lisp_binary_object(build_string(func), stdout); */
+    /* printf("AAAA"); */
+    fwrite_lisp_binary_object(make_fixnum(argc + 1), sstream);
+    fwrite_lisp_binary_object(build_string(func), sstream);
+
+    
     for (int argi = 0; argi < argc; argi++)
       {
-	fprint_lisp_object (argv[argi], sstream, 1);
+	fwrite_lisp_binary_object(argv[argi], sstream);
       }
-    fprintf (sstream, ")");
-    fprintf (sstream, "%c", 0);
     /* fprintf(sstream, "#|%s|#", get_alien_backtrace()); */
     fclose (sstream);
     ulong message_length = sbuffer_len;
@@ -277,15 +347,12 @@ void alien_send_message (char* func, ptrdiff_t argc, Lisp_Object *argv)
 			    send (intercomm_socket, sbuffer, message_length, 0));
     free (sbuffer);
     /* printf ("readng message length\n"); */
-    check_socket_operation (
-			    recv (intercomm_socket, &message_length, sizeof (ulong), 0));
+    check_socket_operation (recv (intercomm_socket, &message_length, sizeof (ulong), 0));
     /* printf ("readng message type\n"); */
-    check_socket_operation (
-			    recv (intercomm_socket, &message_type, sizeof (ulong), 0));
+    check_socket_operation (recv (intercomm_socket, &message_type, sizeof (ulong), 0));
     char *response = malloc (message_length + 1);
     /* printf ("readng message body\n"); */
-    check_socket_operation (
-			    recv (intercomm_socket, response, message_length, 0));
+    check_socket_operation (recv (intercomm_socket, response, message_length, 0));
     response[message_length] = 0;
     /* printf("response %s\n", response); */
     free (response);
@@ -352,37 +419,22 @@ Lisp_Object alien_rpc (char* func, ptrdiff_t argc, Lisp_Object *argv)
   size_t sbuffer_len;
   FILE *sstream = open_memstream(&sbuffer, &sbuffer_len);
 
-  fprintf(sstream, "(progn\n");
-  fprintf(sstream, "  (setf cl-emacs/elisp/internals:*context* (list \n");
-
-  /* fprintf(sstream, "  (cons :emacs-wd ");fprint_lisp_object(build_string(emacs_wd), sstream);fprintf(sstream, ")\n"); */
-  fprintf(sstream, "  (cons :interpreter-environment ");fprint_lisp_object(Vinternal_interpreter_environment, sstream, 0);fprintf(sstream, ")\n");
-  fprintf(sstream, "  (cons :invocation-directory ");fprint_lisp_object(Vinvocation_directory, sstream, 0);fprintf(sstream, ")\n");
-  fprintf(sstream, "  (cons :env (list\n");
-  fprintf(sstream, "    (cons \"HOME\" ");fprint_lisp_object(Fgetenv_internal(build_string("HOME"), Qnil), sstream, 0);fprintf(sstream, ")\n");
-  fprintf(sstream, "  ))\n"); // end of cons :env
-  
-  fprintf(sstream, "  (cons :buffer (list\n");
-  /* fprintf(sstream, "    (cons :name ");fprint_lisp_object(BVAR (current_buffer, name), sstream);fprintf(sstream, ")\n"); */
+  Lisp_Object context = Qnil;
+  context = pure_cons(intern(":invocation-directory"), pure_cons(Vinvocation_directory, context));
+  context = pure_cons(intern(":home"), pure_cons(Fgetenv_internal(build_string("HOME"), Qnil), context));
   if (current_buffer)
+  {
+    context = pure_cons(intern(":buffer-default-directory"), pure_cons(BVAR (current_buffer, directory), context));
+  }
+  Lisp_Object argl = Qnil;
+  for (int argi = argc - 1; argi >= 0; argi--)
     {
-      fprintf (sstream, "    (cons :default-directory ");
-      fprint_lisp_object (BVAR (current_buffer, directory), sstream,
-			  0);
-      fprintf (sstream, ")\n");
+      argl = pure_cons(argv[argi], argl);
     }
-  fprintf(sstream, "  ))\n"); // end of cons :buffer
-  fprintf(sstream, "))\n"); // end of *context*
- 
-  fprintf(sstream, "(%s", func);
-  for (int argi = 0; argi < argc; argi++)
-    {
-      fprintf(sstream, " ");
-      fprint_lisp_object(argv[argi], sstream, 1);
-    }
-  fprintf(sstream, ")\n"); //end of function
-  fprintf(sstream, ")\n"); //end of progn
-  /* fprintf(sstream, "#|%s|#", get_alien_backtrace()); */
+  fwrite_lisp_binary_object(make_fixnum(3), sstream);
+  fwrite_lisp_binary_object(build_string(func), sstream);
+  fwrite_lisp_binary_object(argl, sstream);
+  fwrite_lisp_binary_object(context, sstream);
   fclose(sstream);
   ulong message_length = sbuffer_len;
   /* printf("sending message func:%s (message length %ld)\n", func, message_length); */
@@ -397,15 +449,17 @@ Lisp_Object alien_rpc (char* func, ptrdiff_t argc, Lisp_Object *argv)
   check_socket_operation(recv(intercomm_socket, response, message_length, 0));
   response[message_length] = 0;
   close(intercomm_socket);
+  mtx_unlock(&intercomm_mutex);
   /* printf("rpc response %s\n", response); */
-  Lisp_Object lisp_string = make_unibyte_string (response, message_length);
+  FILE *stream = fmemopen(response, message_length, "r");
+  Lisp_Object result = fread_lisp_binary_object(stream);
   free (response);
+  /* printf("type2 %ld\n", XTYPE(result)); */
+  debug_lisp_object("response: ", result);
   /* printf("before read\n"); */
   /* printf("after read\n"); */
 
-  mtx_unlock(&intercomm_mutex);
-  Lisp_Object result = Feval( Fcar (Fread_from_string (lisp_string, Qnil, Qnil)), Qnil);
-  if (message_type == MESSAGE_TYPE_RPC)
+  if (message_type == MESSAGE_TYPE_NOTIFY_S_EXPR)
     {
       // do nothing
     }

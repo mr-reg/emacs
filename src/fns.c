@@ -1888,7 +1888,7 @@ DEFUN ("memq", Fmemq, Smemq, 2, 2, 0,
 The value is actually the tail of LIST whose car is ELT.  */)
   (Lisp_Object elt, Lisp_Object list)
 {
-  alien_send_message2 ("DEPRECATED memq", elt, list);
+  /* alien_send_message2 ("DEPRECATED memq", elt, list); */
   Lisp_Object tail = list;
   FOR_EACH_TAIL (tail)
     if (EQ (XCAR (tail), elt))
