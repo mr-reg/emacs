@@ -455,7 +455,7 @@ Lisp_Object alien_rpc (char* func, ptrdiff_t argc, Lisp_Object *argv)
   Lisp_Object result = fread_lisp_binary_object(stream);
   free (response);
   /* printf("type2 %ld\n", XTYPE(result)); */
-  debug_lisp_object("response: ", result);
+  /* debug_lisp_object("response: ", result); */
   /* printf("before read\n"); */
   /* printf("after read\n"); */
 

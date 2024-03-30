@@ -1627,8 +1627,8 @@ void
 set_internal (Lisp_Object symbol, Lisp_Object newval, Lisp_Object where,
               enum Set_Internal_Bind bindflag)
 {
+  Fset_internal(symbol, newval, where, make_fixnum(bindflag));
   bool voide = BASE_EQ (newval, Qunbound);
-
   /* If restoring in a dead buffer, do nothing.  */
   /* if (BUFFERP (where) && NILP (XBUFFER (where)->name))
       return; */
