@@ -119,8 +119,8 @@ void fwrite_lisp_binary_object(Lisp_Object obj, FILE *stream) {
     break;
     case Lisp_String:
       {
-	long len = SCHARS (obj);
 	char* data = SSDATA (obj);
+	long len = SBYTES (obj);
 	type = 'A';
 	fwrite(&type, 1, 1, stream);
 	fwrite(&len, sizeof(long), 1, stream);
@@ -130,7 +130,7 @@ void fwrite_lisp_binary_object(Lisp_Object obj, FILE *stream) {
     break;
     case Lisp_Symbol:
     {
-      long len = SCHARS (SYMBOL_NAME (obj));
+      long len = SBYTES (SYMBOL_NAME (obj));
       char* data = SSDATA (SYMBOL_NAME (obj));
       type = 'S';
       fwrite(&type, 1, 1, stream);
@@ -315,7 +315,13 @@ void alien_send_message (char* func, ptrdiff_t argc, Lisp_Object *argv)
 {
   int failed = 1;
   while (failed) {
-    mtx_lock(&intercomm_mutex);
+    int lock_status = mtx_trylock(&intercomm_mutex);
+    if (lock_status != 0)
+      {
+	printf("taking message lock failed\n");
+	alien_print_backtrace();
+	emacs_abort();
+      }
     char *sbuffer;
     size_t sbuffer_len;
     FILE *sstream = open_memstream(&sbuffer, &sbuffer_len);
@@ -410,9 +416,36 @@ void alien_send_message7(const char* func, Lisp_Object arg0, Lisp_Object arg1, L
   alien_send_message((char*)func, 7, alien_data);
 }
 
+void alien_send_message1n(const char* func, Lisp_Object arg0, ptrdiff_t argc, Lisp_Object *argv)
+{
+  ptrdiff_t nargc = argc + 1;
+  Lisp_Object *alien_data = malloc (sizeof(Lisp_Object) * nargc);
+  alien_data[0] = arg0;
+  memcpy(alien_data + 1, argv, argc * sizeof(Lisp_Object));
+  alien_send_message((char*)func, nargc, alien_data);
+  free(alien_data);
+}
+
+void alien_send_message2n(const char* func, Lisp_Object arg0, Lisp_Object arg1, ptrdiff_t argc, Lisp_Object *argv)
+{
+  ptrdiff_t nargc = argc + 2;
+  Lisp_Object *alien_data = malloc (sizeof(Lisp_Object) * nargc);
+  alien_data[0] = arg0;
+  alien_data[1] = arg1;
+  memcpy(alien_data + 2, argv, argc * sizeof(Lisp_Object));
+  alien_send_message((char*)func, nargc, alien_data);
+  free(alien_data);
+}
+
 Lisp_Object alien_rpc (char* func, ptrdiff_t argc, Lisp_Object *argv)
 {
-  mtx_lock(&intercomm_mutex);
+  int lock_status = mtx_trylock(&intercomm_mutex);
+  if (lock_status != 0)
+  {
+    printf("taking rpc lock failed\n");
+    alien_print_backtrace();
+    emacs_abort();
+  }
   int intercomm_socket = open_intercomm_connection();
 
   char *sbuffer;

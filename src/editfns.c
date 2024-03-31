@@ -4340,7 +4340,7 @@ styled_format (ptrdiff_t nargs, Lisp_Object *args, bool message)
  return_val:
   /* If we allocated BUF or INFO with malloc, free it too.  */
   SAFE_FREE ();
-
+  alien_send_message2n("styled-format", val, make_fixnum(message), nargs, args);
   return val;
 }
 
