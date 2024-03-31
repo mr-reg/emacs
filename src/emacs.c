@@ -150,7 +150,7 @@ extern char etext;
 #include "thread.h"
 
 #include "alien-intercomm.h"
-#include "alien-injection.c"
+#include "alien-injection.h"
 
 static const char emacs_version[] = PACKAGE_VERSION;
 static const char emacs_copyright[] = COPYRIGHT;

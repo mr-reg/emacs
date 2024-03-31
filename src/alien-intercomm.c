@@ -207,7 +207,7 @@ Lisp_Object fread_lisp_binary_object(FILE *stream) {
     {
       Lisp_Object car = fread_lisp_binary_object(stream);
       Lisp_Object cdr = fread_lisp_binary_object(stream);
-      result = pure_cons(car, cdr);
+      result = Fcons(car, cdr);
     }
     break;
     default:
@@ -439,6 +439,29 @@ void alien_send_message2n(const char* func, Lisp_Object arg0, Lisp_Object arg1, 
 
 Lisp_Object alien_rpc (char* func, ptrdiff_t argc, Lisp_Object *argv)
 {
+
+  char *sbuffer;
+  size_t sbuffer_len;
+  FILE *sstream = open_memstream(&sbuffer, &sbuffer_len);
+
+  Lisp_Object context = Qnil;
+  context = Fcons(intern(":invocation-directory"), Fcons(Vinvocation_directory, context));
+  context = Fcons(intern(":home"), Fcons(Fgetenv_internal(build_string("HOME"), Qnil), context));
+  if (current_buffer)
+  {
+    context = Fcons(intern(":buffer-default-directory"), Fcons(BVAR (current_buffer, directory), context));
+  }
+  Lisp_Object argl = Qnil;
+  for (int argi = argc - 1; argi >= 0; argi--)
+    {
+      argl = Fcons(argv[argi], argl);
+    }
+  fwrite_lisp_binary_object(make_fixnum(3), sstream);
+  fwrite_lisp_binary_object(build_string(func), sstream);
+  fwrite_lisp_binary_object(argl, sstream);
+  fwrite_lisp_binary_object(context, sstream);
+  fclose(sstream);
+  ulong message_length = sbuffer_len;
   int lock_status = mtx_trylock(&intercomm_mutex);
   if (lock_status != 0)
   {
@@ -447,29 +470,6 @@ Lisp_Object alien_rpc (char* func, ptrdiff_t argc, Lisp_Object *argv)
     emacs_abort();
   }
   int intercomm_socket = open_intercomm_connection();
-
-  char *sbuffer;
-  size_t sbuffer_len;
-  FILE *sstream = open_memstream(&sbuffer, &sbuffer_len);
-
-  Lisp_Object context = Qnil;
-  context = pure_cons(intern(":invocation-directory"), pure_cons(Vinvocation_directory, context));
-  context = pure_cons(intern(":home"), pure_cons(Fgetenv_internal(build_string("HOME"), Qnil), context));
-  if (current_buffer)
-  {
-    context = pure_cons(intern(":buffer-default-directory"), pure_cons(BVAR (current_buffer, directory), context));
-  }
-  Lisp_Object argl = Qnil;
-  for (int argi = argc - 1; argi >= 0; argi--)
-    {
-      argl = pure_cons(argv[argi], argl);
-    }
-  fwrite_lisp_binary_object(make_fixnum(3), sstream);
-  fwrite_lisp_binary_object(build_string(func), sstream);
-  fwrite_lisp_binary_object(argl, sstream);
-  fwrite_lisp_binary_object(context, sstream);
-  fclose(sstream);
-  ulong message_length = sbuffer_len;
   /* printf("sending message func:%s (message length %ld)\n", func, message_length); */
   check_socket_operation(send(intercomm_socket, &message_length, sizeof(ulong), 0));
   ulong message_type = MESSAGE_TYPE_RPC;

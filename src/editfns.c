@@ -34,7 +34,7 @@ along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 #endif
 
 #include "lisp.h"
-
+#include "alien-injection.h"
 #include <float.h>
 #include <limits.h>
 #include <math.h>
@@ -61,7 +61,7 @@ along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 #endif
 
 static void update_buffer_properties (ptrdiff_t, ptrdiff_t);
-static Lisp_Object styled_format (ptrdiff_t, Lisp_Object *, bool);
+/* static Lisp_Object styled_format (ptrdiff_t, Lisp_Object *, bool); */
 
 /* The cached value of Vsystem_name.  This is used only to compare it
    to Vsystem_name, so it need not be visible to the GC.  */
@@ -3387,7 +3387,7 @@ produced text.
 usage: (format STRING &rest OBJECTS)  */)
   (ptrdiff_t nargs, Lisp_Object *args)
 {
-  return styled_format (nargs, args, false);
+  return styled_format1n (Qnil, nargs, args);
 }
 
 DEFUN ("format-message", Fformat_message, Sformat_message, 1, MANY, 0,
@@ -3403,946 +3403,946 @@ and right quote replacement characters are specified by
 usage: (format-message STRING &rest OBJECTS)  */)
   (ptrdiff_t nargs, Lisp_Object *args)
 {
-  return styled_format (nargs, args, true);
+  return styled_format1n (Qt, nargs, args);
 }
 
 /* Implement ‘format-message’ if MESSAGE is true, ‘format’ otherwise.  */
 
-static Lisp_Object
-styled_format (ptrdiff_t nargs, Lisp_Object *args, bool message)
-{
-  enum
-  {
-   /* Maximum precision for a %f conversion such that the trailing
-      output digit might be nonzero.  Any precision larger than this
-      will not yield useful information.  */
-   USEFUL_PRECISION_MAX = ((1 - LDBL_MIN_EXP)
-			   * (FLT_RADIX == 2 || FLT_RADIX == 10 ? 1
-			      : FLT_RADIX == 16 ? 4
-			      : -1)),
-
-   /* Maximum number of bytes (including terminating null) generated
-      by any format, if precision is no more than USEFUL_PRECISION_MAX.
-      On all practical hosts, %Lf is the worst case.  */
-   SPRINTF_BUFSIZE = (sizeof "-." + (LDBL_MAX_10_EXP + 1)
-		      + USEFUL_PRECISION_MAX)
-  };
-  verify (USEFUL_PRECISION_MAX > 0);
-
-  ptrdiff_t n;		/* The number of the next arg to substitute.  */
-  char initial_buffer[1000 + SPRINTF_BUFSIZE];
-  char *buf = initial_buffer;
-  ptrdiff_t bufsize = sizeof initial_buffer;
-  ptrdiff_t max_bufsize = STRING_BYTES_BOUND + 1;
-  char *p;
-  specpdl_ref buf_save_value_index UNINIT;
-  char *format, *end;
-  ptrdiff_t nchars;
-  /* When we make a multibyte string, we must pay attention to the
-     byte combining problem, i.e., a byte may be combined with a
-     multibyte character of the previous string.  This flag tells if we
-     must consider such a situation or not.  */
-  bool maybe_combine_byte;
-  Lisp_Object val;
-  bool arg_intervals = false;
-  USE_SAFE_ALLOCA;
-  sa_avail -= sizeof initial_buffer;
-
-  /* Information recorded for each format spec.  */
-  struct info
-  {
-    /* The corresponding argument, converted to string if conversion
-       was needed.  */
-    Lisp_Object argument;
-
-    /* The start and end bytepos in the output string.  */
-    ptrdiff_t start, end;
-
-    /* The start bytepos of the spec in the format string.  */
-    ptrdiff_t fbeg;
-
-    /* Whether the argument is a string with intervals.  */
-    bool_bf intervals : 1;
-  } *info;
-
-  CHECK_STRING (args[0]);
-  char *format_start = SSDATA (args[0]);
-  bool multibyte_format = STRING_MULTIBYTE (args[0]);
-  ptrdiff_t formatlen = SBYTES (args[0]);
-  bool fmt_props = !!string_intervals (args[0]);
-
-  /* Upper bound on number of format specs.  Each uses at least 2 chars.  */
-  ptrdiff_t nspec_bound = SCHARS (args[0]) >> 1;
-
-  /* Allocate the info and discarded tables.  */
-  ptrdiff_t info_size, alloca_size;
-  if (INT_MULTIPLY_WRAPV (nspec_bound, sizeof *info, &info_size)
-      || INT_ADD_WRAPV (formatlen, info_size, &alloca_size)
-      || SIZE_MAX < alloca_size)
-    memory_full (SIZE_MAX);
-  info = SAFE_ALLOCA (alloca_size);
-  /* discarded[I] is 1 if byte I of the format
-     string was not copied into the output.
-     It is 2 if byte I was not the first byte of its character.  */
-  char *discarded = (char *) &info[nspec_bound];
-  memset (discarded, 0, formatlen);
-
-  /* Try to determine whether the result should be multibyte.
-     This is not always right; sometimes the result needs to be multibyte
-     because of an object that we will pass through prin1.
-     or because a grave accent or apostrophe is requoted,
-     and in that case, we won't know it here.  */
-
-  /* True if the output should be a multibyte string,
-     which is true if any of the inputs is one.  */
-  bool multibyte = multibyte_format;
-  for (ptrdiff_t i = 1; !multibyte && i < nargs; i++)
-    if (STRINGP (args[i]) && STRING_MULTIBYTE (args[i]))
-      multibyte = true;
-
-  Lisp_Object quoting_style = message ? Ftext_quoting_style () : Qnil;
-
-  ptrdiff_t ispec;
-  ptrdiff_t nspec = 0;
-
-  /* True if a string needs to be allocated to hold the result.  */
-  bool new_result = false;
-
-  /* If we start out planning a unibyte result,
-     then discover it has to be multibyte, we jump back to retry.  */
- retry:
-
-  p = buf;
-  nchars = 0;
-
-  /* N is the argument index, ISPEC is the specification index.  */
-  n = 0;
-  ispec = 0;
-
-  /* Scan the format and store result in BUF.  */
-  format = format_start;
-  end = format + formatlen;
-  maybe_combine_byte = false;
-
-  while (format != end)
-    {
-      /* The values of N, ISPEC, and FORMAT when the loop body is
-         entered.  */
-      ptrdiff_t n0 = n;
-      ptrdiff_t ispec0 = ispec;
-      char *format0 = format;
-      char const *convsrc = format;
-      unsigned char format_char = *format++;
-
-      /* Number of bytes to be preallocated for the next directive's
-	 output.  At the end of each iteration this is at least
-	 CONVBYTES_ROOM, and is greater if the current directive
-	 output was so large that it will be retried after buffer
-	 reallocation.  */
-      ptrdiff_t convbytes = 1;
-      enum { CONVBYTES_ROOM = SPRINTF_BUFSIZE - 1 };
-      eassert (p <= buf + bufsize - SPRINTF_BUFSIZE);
-
-      if (format_char == '%')
-	{
-	  /* General format specifications look like
-
-	     '%' [field-number] [flags] [field-width] [precision] format
-
-	     where
-
-             field-number ::= [0-9]+ '$'
-	     flags ::= [-+0# ]+
-	     field-width ::= [0-9]+
-	     precision ::= '.' [0-9]*
-
-	     If present, a field-number specifies the argument number
-	     to substitute.  Otherwise, the next argument is taken.
-
-	     If a field-width is specified, it specifies to which width
-	     the output should be padded with blanks, if the output
-	     string is shorter than field-width.
-
-	     If precision is specified, it specifies the number of
-	     digits to print after the '.' for floats, or the max.
-	     number of chars to print from a string.  */
-
-	  ptrdiff_t num;
-	  char *num_end;
-	  if (c_isdigit (*format))
-	    {
-	      num = str2num (format, &num_end);
-	      if (*num_end == '$')
-		{
-		  n = num - 1;
-		  format = num_end + 1;
-		}
-	    }
-
-	  bool minus_flag = false;
-	  bool  plus_flag = false;
-	  bool space_flag = false;
-	  bool sharp_flag = false;
-	  bool  zero_flag = false;
-
-	  for (; ; format++)
-	    {
-	      switch (*format)
-		{
-		case '-': minus_flag = true; continue;
-		case '+':  plus_flag = true; continue;
-		case ' ': space_flag = true; continue;
-		case '#': sharp_flag = true; continue;
-		case '0':  zero_flag = true; continue;
-		}
-	      break;
-	    }
-
-	  /* Ignore flags when sprintf ignores them.  */
-	  space_flag &= ! plus_flag;
-	  zero_flag &= ! minus_flag;
-
-	  num = str2num (format, &num_end);
-	  if (max_bufsize <= num)
-	    string_overflow ();
-	  ptrdiff_t field_width = num;
-
-	  bool precision_given = *num_end == '.';
-	  ptrdiff_t precision = (precision_given
-				 ? str2num (num_end + 1, &num_end)
-				 : PTRDIFF_MAX);
-	  format = num_end;
-
-	  if (format == end)
-	    error ("Format string ends in middle of format specifier");
-
-	  char conversion = *format++;
-	  memset (&discarded[format0 - format_start], 1,
-		  format - format0 - (conversion == '%'));
-	  info[ispec].fbeg = format0 - format_start;
-	  if (conversion == '%')
-	    {
-	      new_result = true;
-	      goto copy_char;
-	    }
-
-	  ++n;
-	  if (! (n < nargs))
-	    error ("Not enough arguments for format string");
-
-	  struct info *spec = &info[ispec++];
-	  if (nspec < ispec)
-	    {
-	      spec->argument = args[n];
-	      spec->intervals = false;
-	      nspec = ispec;
-	    }
-	  Lisp_Object arg = spec->argument;
-
-	  /* For 'S', prin1 the argument, and then treat like 's'.
-	     For 's', princ any argument that is not a string or
-	     symbol.  But don't do this conversion twice, which might
-	     happen after retrying.  */
-	  if ((conversion == 'S'
-	       || (conversion == 's'
-		   && ! STRINGP (arg) && ! SYMBOLP (arg))))
-	    {
-	      if (EQ (arg, args[n]))
-		{
-		  Lisp_Object noescape = conversion == 'S' ? Qnil : Qt;
-		  spec->argument = arg = Fprin1_to_string (arg, noescape, Qnil);
-		  if (STRING_MULTIBYTE (arg) && ! multibyte)
-		    {
-		      multibyte = true;
-		      goto retry;
-		    }
-		}
-	      conversion = 's';
-	    }
-	  else if (conversion == 'c')
-	    {
-	      if (FIXNUMP (arg) && ! ASCII_CHAR_P (XFIXNUM (arg)))
-		{
-		  if (!multibyte)
-		    {
-		      multibyte = true;
-		      goto retry;
-		    }
-		  spec->argument = arg = Fchar_to_string (arg);
-		}
-
-	      if (!EQ (arg, args[n]))
-		conversion = 's';
-	      zero_flag = false;
-	    }
-
-	  if (SYMBOLP (arg))
-	    {
-	      spec->argument = arg = SYMBOL_NAME (arg);
-	      if (STRING_MULTIBYTE (arg) && ! multibyte)
-		{
-		  multibyte = true;
-		  goto retry;
-		}
-	    }
-
-	  bool float_conversion
-	    = conversion == 'e' || conversion == 'f' || conversion == 'g';
-
-	  if (conversion == 's')
-	    {
-	      if (format == end && format - format_start == 2
-		  && ! string_intervals (args[0]))
-		{
-		  val = arg;
-		  goto return_val;
-		}
-
-	      /* handle case (precision[n] >= 0) */
-
-	      ptrdiff_t prec = -1;
-	      if (precision_given)
-		prec = precision;
-
-	      /* lisp_string_width ignores a precision of 0, but GNU
-		 libc functions print 0 characters when the precision
-		 is 0.  Imitate libc behavior here.  Changing
-		 lisp_string_width is the right thing, and will be
-		 done, but meanwhile we work with it. */
-
-	      ptrdiff_t width, nbytes;
-	      ptrdiff_t nchars_string;
-	      if (prec == 0)
-		width = nchars_string = nbytes = 0;
-	      else
-		{
-		  ptrdiff_t nch, nby;
-		  nchars_string = SCHARS (arg);
-		  width = lisp_string_width (arg, 0, nchars_string, prec,
-					     &nch, &nby, false);
-		  if (prec < 0)
-		    nbytes = SBYTES (arg);
-		  else
-		    {
-		      nchars_string = nch;
-		      nbytes = nby;
-		    }
-		}
-
-	      convbytes = nbytes;
-	      if (convbytes && multibyte && ! STRING_MULTIBYTE (arg))
-		convbytes = count_size_as_multibyte (SDATA (arg), nbytes);
-
-	      ptrdiff_t padding
-		= width < field_width ? field_width - width : 0;
-
-	      if (max_bufsize - padding <= convbytes)
-		string_overflow ();
-	      convbytes += padding;
-	      if (convbytes <= buf + bufsize - p)
-		{
-		  /* If the format spec has properties, we should account
-		     for the padding on the left in the info[] array.  */
-		  if (fmt_props)
-		    spec->start = nchars;
-		  if (! minus_flag)
-		    {
-		      memset (p, ' ', padding);
-		      p += padding;
-		      nchars += padding;
-		    }
-		  /* If the properties will come from the argument, we
-		     don't extend them to the left due to padding.  */
-		  if (!fmt_props)
-		    spec->start = nchars;
-
-		  if (p > buf
-		      && multibyte
-		      && !ASCII_CHAR_P (*((unsigned char *) p - 1))
-		      && STRING_MULTIBYTE (arg)
-		      && !CHAR_HEAD_P (SREF (arg, 0)))
-		    maybe_combine_byte = true;
-
-		  p += copy_text (SDATA (arg), (unsigned char *) p,
-				  nbytes,
-				  STRING_MULTIBYTE (arg), multibyte);
-
-		  nchars += nchars_string;
-
-		  if (minus_flag)
-		    {
-		      memset (p, ' ', padding);
-		      p += padding;
-		      nchars += padding;
-		    }
-		  spec->end = nchars;
-
-		  /* If this argument has text properties, record where
-		     in the result string it appears.  */
-		  if (string_intervals (arg))
-		    spec->intervals = arg_intervals = true;
-
-		  new_result = true;
-		  convbytes = CONVBYTES_ROOM;
-		}
-	    }
-	  else if (! (conversion == 'c' || conversion == 'd'
-		      || float_conversion || conversion == 'i'
-		      || conversion == 'o' || conversion == 'x'
-		      || conversion == 'X'))
-	    {
-	      unsigned char *p = (unsigned char *) format - 1;
-	      if (multibyte_format)
-		error ("Invalid format operation %%%c", STRING_CHAR (p));
-	      else
-		error (*p <= 127 ? "Invalid format operation %%%c"
-		                 : "Invalid format operation char #o%03o",
-		       *p);
-	    }
-	  else if (! (FIXNUMP (arg) || ((BIGNUMP (arg) || FLOATP (arg))
-					&& conversion != 'c')))
-	    error ("Format specifier doesn't match argument type");
-	  else
-	    {
-	      /* Length of PRIdMAX without the trailing "d".  */
-	      enum { pMlen = sizeof PRIdMAX - 2 };
-
-	      /* Avoid undefined behavior in underlying sprintf.  */
-	      if (conversion == 'd' || conversion == 'i')
-		sharp_flag = false;
-
-	      /* Create the copy of the conversion specification, with
-		 any width and precision removed, with ".*" inserted,
-		 with "L" possibly inserted for floating-point formats,
-		 and with PRIdMAX (sans "d") inserted for integer formats.
-		 At most two flags F can be specified at once.  */
-	      char convspec[sizeof "%FF.*d" + max (sizeof "L" - 1, pMlen)];
-	      char *f = convspec;
-	      *f++ = '%';
-	      /* MINUS_FLAG and ZERO_FLAG are dealt with later.  */
-	      *f = '+'; f +=  plus_flag;
-	      *f = ' '; f += space_flag;
-	      *f = '#'; f += sharp_flag;
-	      *f++ = '.';
-	      *f++ = '*';
-	      if (! (float_conversion || conversion == 'c'))
-		{
-		  memcpy (f, PRIdMAX, pMlen);
-		  f += pMlen;
-		  zero_flag &= ! precision_given;
-		}
-	      *f++ = conversion;
-	      *f = '\0';
-
-	      int prec = -1;
-	      if (precision_given)
-		prec = min (precision, USEFUL_PRECISION_MAX);
-
-	      /* Characters to be inserted after spaces and before
-		 leading zeros.  This can occur with bignums, since
-		 bignum_to_string does only leading '-'.  */
-	      char prefix[sizeof "-0x" - 1];
-	      int prefixlen = 0;
-
-	      /* Use sprintf or bignum_to_string to format this number.  Omit
-		 padding and excess precision, though, because sprintf limits
-		 output length to INT_MAX and bignum_to_string doesn't
-		 do padding or precision.
-
-		 Use five sprintf conversions: double, long double, unsigned
-		 char (passed as int), wide signed int, and wide
-		 unsigned int.  Treat them separately because the
-		 sprintf ABI is sensitive to which type is passed.  Be
-		 careful about integer overflow, NaNs, infinities, and
-		 conversions; for example, the min and max macros are
-		 not suitable here.  */
-	      ptrdiff_t sprintf_bytes;
-	      if (float_conversion)
-		{
-		  /* Format as a long double if the arg is an integer
-		     that would lose less information than when formatting
-		     it as a double.  Otherwise, format as a double;
-		     this is likely to be faster and better-tested.  */
-
-		  bool format_as_long_double = false;
-		  double darg;
-		  long double ldarg UNINIT;
-
-		  if (FLOATP (arg))
-		    darg = XFLOAT_DATA (arg);
-		  else
-		    {
-		      bool format_bignum_as_double = false;
-		      if (LDBL_MANT_DIG <= DBL_MANT_DIG)
-			{
-			  if (FIXNUMP (arg))
-			    darg = XFIXNUM (arg);
-			  else
-			    format_bignum_as_double = true;
-			}
-		      else
-			{
-			  if (INTEGERP (arg))
-			    {
-			      intmax_t iarg;
-			      uintmax_t uarg;
-			      if (integer_to_intmax (arg, &iarg))
-				ldarg = iarg;
-			      else if (integer_to_uintmax (arg, &uarg))
-				ldarg = uarg;
-			      else
-				format_bignum_as_double = true;
-			    }
-			  if (!format_bignum_as_double)
-			    {
-			      darg = ldarg;
-			      format_as_long_double = darg != ldarg;
-			    }
-			}
-		      if (format_bignum_as_double)
-			darg = bignum_to_double (arg);
-		    }
-
-		  if (format_as_long_double)
-		    {
-		      f[-1] = 'L';
-		      *f++ = conversion;
-		      *f = '\0';
-		      sprintf_bytes = sprintf (p, convspec, prec, ldarg);
-		    }
-		  else
-		    sprintf_bytes = sprintf (p, convspec, prec, darg);
-		}
-	      else if (conversion == 'c')
-		{
-		  /* Don't use sprintf here, as it might mishandle prec.  */
-		  p[0] = XFIXNUM (arg);
-		  p[1] = '\0';
-		  sprintf_bytes = prec != 0;
-		}
-	      else if (BIGNUMP (arg))
-	      bignum_arg:
-		{
-		  int base = ((conversion == 'd' || conversion == 'i') ? 10
-			      : conversion == 'o' ? 8 : 16);
-		  sprintf_bytes = bignum_bufsize (arg, base);
-		  if (sprintf_bytes <= buf + bufsize - p)
-		    {
-		      int signedbase = conversion == 'X' ? -base : base;
-		      sprintf_bytes = bignum_to_c_string (p, sprintf_bytes,
-							  arg, signedbase);
-		      bool negative = p[0] == '-';
-		      prec = min (precision, sprintf_bytes - prefixlen);
-		      prefix[prefixlen] = plus_flag ? '+' : ' ';
-		      prefixlen += (plus_flag | space_flag) & !negative;
-		      prefix[prefixlen] = '0';
-		      prefix[prefixlen + 1] = conversion;
-		      prefixlen += sharp_flag && base == 16 ? 2 : 0;
-		    }
-		}
-	      else if (conversion == 'd' || conversion == 'i')
-		{
-		  if (FIXNUMP (arg))
-		    {
-		      intmax_t x = XFIXNUM (arg);
-		      sprintf_bytes = sprintf (p, convspec, prec, x);
-		    }
-		  else
-		    {
-		      strcpy (f - pMlen - 1, "f");
-		      double x = XFLOAT_DATA (arg);
-
-		      /* Truncate and then convert -0 to 0, to be more
-			 consistent with %x etc.; see Bug#31938.  */
-		      x = trunc (x);
-		      x = x ? x : 0;
-
-		      sprintf_bytes = sprintf (p, convspec, 0, x);
-		      bool signedp = ! c_isdigit (p[0]);
-		      prec = min (precision, sprintf_bytes - signedp);
-		    }
-		}
-	      else
-		{
-		  uintmax_t x;
-		  bool negative;
-		  if (FIXNUMP (arg))
-		    {
-		      if (binary_as_unsigned)
-			{
-			  x = XUFIXNUM (arg);
-			  negative = false;
-			}
-		      else
-			{
-			  EMACS_INT i = XFIXNUM (arg);
-			  negative = i < 0;
-			  x = negative ? -i : i;
-			}
-		    }
-		  else
-		    {
-		      double d = XFLOAT_DATA (arg);
-		      double abs_d = fabs (d);
-		      if (abs_d < UINTMAX_MAX + 1.0)
-			{
-			  negative = d <= -1;
-			  x = abs_d;
-			}
-		      else
-			{
-			  arg = double_to_integer (d);
-			  goto bignum_arg;
-			}
-		    }
-		  p[0] = negative ? '-' : plus_flag ? '+' : ' ';
-		  bool signedp = negative | plus_flag | space_flag;
-		  sprintf_bytes = sprintf (p + signedp, convspec, prec, x);
-		  sprintf_bytes += signedp;
-		}
-
-	      /* Now the length of the formatted item is known, except it omits
-		 padding and excess precision.  Deal with excess precision
-		 first.  This happens when the format specifies ridiculously
-		 large precision, or when %d or %i formats a float that would
-		 ordinarily need fewer digits than a specified precision,
-		 or when a bignum is formatted using an integer format
-		 with enough precision.  */
-	      ptrdiff_t excess_precision
-		= precision_given ? precision - prec : 0;
-	      ptrdiff_t trailing_zeros = 0;
-	      if (excess_precision != 0 && float_conversion)
-		{
-		  if (! c_isdigit (p[sprintf_bytes - 1])
-		      || (conversion == 'g'
-			  && ! (sharp_flag && strchr (p, '.'))))
-		    excess_precision = 0;
-		  trailing_zeros = excess_precision;
-		}
-	      ptrdiff_t leading_zeros = excess_precision - trailing_zeros;
-
-	      /* Compute the total bytes needed for this item, including
-		 excess precision and padding.  */
-	      ptrdiff_t numwidth;
-	      if (INT_ADD_WRAPV (prefixlen + sprintf_bytes, excess_precision,
-				 &numwidth))
-		numwidth = PTRDIFF_MAX;
-	      ptrdiff_t padding
-		= numwidth < field_width ? field_width - numwidth : 0;
-	      if (max_bufsize - (prefixlen + sprintf_bytes) <= excess_precision
-		  || max_bufsize - padding <= numwidth)
-		string_overflow ();
-	      convbytes = numwidth + padding;
-
-	      if (convbytes <= buf + bufsize - p)
-		{
-		  bool signedp = p[0] == '-' || p[0] == '+' || p[0] == ' ';
-		  int beglen = (signedp
-				   + ((p[signedp] == '0'
-				       && (p[signedp + 1] == 'x'
-					   || p[signedp + 1] == 'X'))
-				      ? 2 : 0));
-		  eassert (prefixlen == 0 || beglen == 0
-			   || (beglen == 1 && p[0] == '-'
-			       && ! (prefix[0] == '-' || prefix[0] == '+'
-				     || prefix[0] == ' ')));
-		  if (zero_flag && 0 <= char_hexdigit (p[beglen]))
-		    {
-		      leading_zeros += padding;
-		      padding = 0;
-		    }
-		  if (leading_zeros == 0 && sharp_flag && conversion == 'o'
-		      && p[beglen] != '0')
-		    {
-		      leading_zeros++;
-		      padding -= padding != 0;
-		    }
-
-		  int endlen = 0;
-		  if (trailing_zeros
-		      && (conversion == 'e' || conversion == 'g'))
-		    {
-		      char *e = strchr (p, 'e');
-		      if (e)
-			endlen = p + sprintf_bytes - e;
-		    }
-
-		  ptrdiff_t midlen = sprintf_bytes - beglen - endlen;
-		  ptrdiff_t leading_padding = minus_flag ? 0 : padding;
-		  ptrdiff_t trailing_padding = padding - leading_padding;
-
-		  /* Insert padding and excess-precision zeros.  The output
-		     contains the following components, in left-to-right order:
-
-		     LEADING_PADDING spaces.
-		     BEGLEN bytes taken from the start of sprintf output.
-		     PREFIXLEN bytes taken from the start of the prefix array.
-		     LEADING_ZEROS zeros.
-		     MIDLEN bytes taken from the middle of sprintf output.
-		     TRAILING_ZEROS zeros.
-		     ENDLEN bytes taken from the end of sprintf output.
-		     TRAILING_PADDING spaces.
-
-		     The sprintf output is taken from the buffer starting at
-		     P and continuing for SPRINTF_BYTES bytes.  */
-
-		  ptrdiff_t incr
-		    = (padding + leading_zeros + prefixlen
-		       + sprintf_bytes + trailing_zeros);
-
-		  /* Optimize for the typical case with padding or zeros.  */
-		  if (incr != sprintf_bytes)
-		    {
-		      /* Move data to make room to insert spaces and '0's.
-		         As this may entail overlapping moves, process
-			 the output right-to-left and use memmove.
-			 With any luck this code is rarely executed.  */
-		      char *src = p + sprintf_bytes;
-		      char *dst = p + incr;
-		      dst -= trailing_padding;
-		      memset (dst, ' ', trailing_padding);
-		      src -= endlen;
-		      dst -= endlen;
-		      memmove (dst, src, endlen);
-		      dst -= trailing_zeros;
-		      memset (dst, '0', trailing_zeros);
-		      src -= midlen;
-		      dst -= midlen;
-		      memmove (dst, src, midlen);
-		      dst -= leading_zeros;
-		      memset (dst, '0', leading_zeros);
-		      dst -= prefixlen;
-		      memcpy (dst, prefix, prefixlen);
-		      src -= beglen;
-		      dst -= beglen;
-		      memmove (dst, src, beglen);
-		      dst -= leading_padding;
-		      memset (dst, ' ', leading_padding);
-		    }
-
-		  p += incr;
-		  spec->start = nchars;
-		  spec->end = nchars += incr;
-		  new_result = true;
-		  convbytes = CONVBYTES_ROOM;
-		}
-	    }
-	}
-      else
-	{
-	  unsigned char str[MAX_MULTIBYTE_LENGTH];
-
-	  if ((format_char == '`' || format_char == '\'')
-	      && EQ (quoting_style, Qcurve))
-	    {
-	      if (! multibyte)
-		{
-		  multibyte = true;
-		  goto retry;
-		}
-	      convsrc = format_char == '`' ? uLSQM : uRSQM;
-	      convbytes = 3;
-	      new_result = true;
-	    }
-	  else if (format_char == '`' && EQ (quoting_style, Qstraight))
-	    {
-	      convsrc = "'";
-	      new_result = true;
-	    }
-	  else
-	    {
-	      /* Copy a single character from format to buf.  */
-	      if (multibyte_format)
-		{
-		  /* Copy a whole multibyte character.  */
-		  if (p > buf
-		      && !ASCII_CHAR_P (*((unsigned char *) p - 1))
-		      && !CHAR_HEAD_P (format_char))
-		    maybe_combine_byte = true;
-
-		  while (! CHAR_HEAD_P (*format))
-		    format++;
-
-		  convbytes = format - format0;
-		  memset (&discarded[format0 + 1 - format_start], 2,
-			  convbytes - 1);
-		}
-	      else if (multibyte && !ASCII_CHAR_P (format_char))
-		{
-		  int c = BYTE8_TO_CHAR (format_char);
-		  convbytes = CHAR_STRING (c, str);
-		  convsrc = (char *) str;
-		  new_result = true;
-		}
-	    }
-
-	copy_char:
-	  memcpy (p, convsrc, convbytes);
-	  p += convbytes;
-	  nchars++;
-	  convbytes = CONVBYTES_ROOM;
-	}
-
-      ptrdiff_t used = p - buf;
-      ptrdiff_t buflen_needed;
-      if (INT_ADD_WRAPV (used, convbytes, &buflen_needed))
-	string_overflow ();
-      if (bufsize <= buflen_needed)
-	{
-	  if (max_bufsize <= buflen_needed)
-	    string_overflow ();
-
-	  /* Either there wasn't enough room to store this conversion,
-	     or there won't be enough room to do a sprintf the next
-	     time through the loop.  Allocate enough room (and then some).  */
-
-	  bufsize = (buflen_needed <= max_bufsize / 2
-		     ? buflen_needed * 2 : max_bufsize);
-
-	  if (buf == initial_buffer)
-	    {
-	      buf = xmalloc (bufsize);
-	      buf_save_value_index = SPECPDL_INDEX ();
-	      record_unwind_protect_ptr (xfree, buf);
-	      memcpy (buf, initial_buffer, used);
-	    }
-	  else
-	    {
-	      buf = xrealloc (buf, bufsize);
-	      set_unwind_protect_ptr (buf_save_value_index, xfree, buf);
-	    }
-
-	  p = buf + used;
-	  if (convbytes != CONVBYTES_ROOM)
-	    {
-	      /* There wasn't enough room for this conversion; do it over.  */
-	      eassert (CONVBYTES_ROOM < convbytes);
-	      format = format0;
-	      n = n0;
-	      ispec = ispec0;
-	    }
-	}
-    }
-
-  if (bufsize < p - buf)
-    emacs_abort ();
-
-  if (! new_result)
-    {
-      val = args[0];
-      goto return_val;
-    }
-
-  if (maybe_combine_byte)
-    nchars = multibyte_chars_in_text ((unsigned char *) buf, p - buf);
-  val = make_specified_string (buf, nchars, p - buf, multibyte);
-
-  /* If the format string has text properties, or any of the string
-     arguments has text properties, set up text properties of the
-     result string.  */
-
-  if (string_intervals (args[0]) || arg_intervals)
-    {
-      /* Add text properties from the format string.  */
-      Lisp_Object len = make_fixnum (SCHARS (args[0]));
-      Lisp_Object props = text_property_list (args[0], make_fixnum (0),
-					      len, Qnil);
-      if (CONSP (props))
-	{
-	  ptrdiff_t bytepos = 0, position = 0, translated = 0;
-	  ptrdiff_t fieldn = 0;
-
-	  /* Adjust the bounds of each text property
-	     to the proper start and end in the output string.  */
-
-	  /* Put the positions in PROPS in increasing order, so that
-	     we can do (effectively) one scan through the position
-	     space of the format string.  */
-	  props = Fnreverse (props);
-
-	  /* BYTEPOS is the byte position in the format string,
-	     POSITION is the untranslated char position in it,
-	     TRANSLATED is the translated char position in BUF,
-	     and ARGN is the number of the next arg we will come to.  */
-	  for (Lisp_Object list = props; CONSP (list); list = XCDR (list))
-	    {
-	      Lisp_Object item = XCAR (list);
-
-	      /* First adjust the property start position.  */
-	      ptrdiff_t pos = XFIXNUM (XCAR (item));
-
-	      /* Advance BYTEPOS, POSITION, TRANSLATED and ARGN
-		 up to this position.  */
-	      for (; position < pos; bytepos++)
-		{
-		  if (! discarded[bytepos])
-		    position++, translated++;
-		  else if (discarded[bytepos] == 1)
-		    {
-		      position++;
-		      if (fieldn < nspec
-			  && bytepos >= info[fieldn].fbeg
-			  && translated == info[fieldn].start)
-			{
-			  translated += info[fieldn].end - info[fieldn].start;
-			  fieldn++;
-			}
-		    }
-		}
-
-	      XSETCAR (item, make_fixnum (translated));
-
-	      /* Likewise adjust the property end position.  */
-	      pos = XFIXNUM (XCAR (XCDR (item)));
-
-	      for (; position < pos; bytepos++)
-		{
-		  if (! discarded[bytepos])
-		    position++, translated++;
-		  else if (discarded[bytepos] == 1)
-		    {
-		      position++;
-		      if (fieldn < nspec
-			  && bytepos >= info[fieldn].fbeg
-			  && translated == info[fieldn].start)
-			{
-			  translated += info[fieldn].end - info[fieldn].start;
-			  fieldn++;
-			}
-		    }
-		}
-
-	      XSETCAR (XCDR (item), make_fixnum (translated));
-	    }
-
-	  add_text_properties_from_list (val, props, make_fixnum (0));
-	}
-
-      /* Add text properties from arguments.  */
-      if (arg_intervals)
-	for (ptrdiff_t i = 0; i < nspec; i++)
-	  if (info[i].intervals)
-	    {
-	      len = make_fixnum (SCHARS (info[i].argument));
-	      Lisp_Object new_len = make_fixnum (info[i].end - info[i].start);
-	      props = text_property_list (info[i].argument,
-                                          make_fixnum (0), len, Qnil);
-	      props = extend_property_ranges (props, len, new_len);
-	      /* If successive arguments have properties, be sure that
-		 the value of `composition' property be the copy.  */
-	      if (1 < i && info[i - 1].end)
-		make_composition_value_copy (props);
-	      add_text_properties_from_list (val, props,
-					     make_fixnum (info[i].start));
-	    }
-    }
-
- return_val:
-  /* If we allocated BUF or INFO with malloc, free it too.  */
-  SAFE_FREE ();
-  alien_send_message2n("styled-format", val, make_fixnum(message), nargs, args);
-  return val;
-}
+/* static Lisp_Object */
+/* styled_format (ptrdiff_t nargs, Lisp_Object *args, bool message) */
+/* { */
+/*   enum */
+/*   { */
+/*    /\* Maximum precision for a %f conversion such that the trailing */
+/*       output digit might be nonzero.  Any precision larger than this */
+/*       will not yield useful information.  *\/ */
+/*    USEFUL_PRECISION_MAX = ((1 - LDBL_MIN_EXP) */
+/* 			   * (FLT_RADIX == 2 || FLT_RADIX == 10 ? 1 */
+/* 			      : FLT_RADIX == 16 ? 4 */
+/* 			      : -1)), */
+
+/*    /\* Maximum number of bytes (including terminating null) generated */
+/*       by any format, if precision is no more than USEFUL_PRECISION_MAX. */
+/*       On all practical hosts, %Lf is the worst case.  *\/ */
+/*    SPRINTF_BUFSIZE = (sizeof "-." + (LDBL_MAX_10_EXP + 1) */
+/* 		      + USEFUL_PRECISION_MAX) */
+/*   }; */
+/*   verify (USEFUL_PRECISION_MAX > 0); */
+
+/*   ptrdiff_t n;		/\* The number of the next arg to substitute.  *\/ */
+/*   char initial_buffer[1000 + SPRINTF_BUFSIZE]; */
+/*   char *buf = initial_buffer; */
+/*   ptrdiff_t bufsize = sizeof initial_buffer; */
+/*   ptrdiff_t max_bufsize = STRING_BYTES_BOUND + 1; */
+/*   char *p; */
+/*   specpdl_ref buf_save_value_index UNINIT; */
+/*   char *format, *end; */
+/*   ptrdiff_t nchars; */
+/*   /\* When we make a multibyte string, we must pay attention to the */
+/*      byte combining problem, i.e., a byte may be combined with a */
+/*      multibyte character of the previous string.  This flag tells if we */
+/*      must consider such a situation or not.  *\/ */
+/*   bool maybe_combine_byte; */
+/*   Lisp_Object val; */
+/*   bool arg_intervals = false; */
+/*   USE_SAFE_ALLOCA; */
+/*   sa_avail -= sizeof initial_buffer; */
+
+/*   /\* Information recorded for each format spec.  *\/ */
+/*   struct info */
+/*   { */
+/*     /\* The corresponding argument, converted to string if conversion */
+/*        was needed.  *\/ */
+/*     Lisp_Object argument; */
+
+/*     /\* The start and end bytepos in the output string.  *\/ */
+/*     ptrdiff_t start, end; */
+
+/*     /\* The start bytepos of the spec in the format string.  *\/ */
+/*     ptrdiff_t fbeg; */
+
+/*     /\* Whether the argument is a string with intervals.  *\/ */
+/*     bool_bf intervals : 1; */
+/*   } *info; */
+
+/*   CHECK_STRING (args[0]); */
+/*   char *format_start = SSDATA (args[0]); */
+/*   bool multibyte_format = STRING_MULTIBYTE (args[0]); */
+/*   ptrdiff_t formatlen = SBYTES (args[0]); */
+/*   bool fmt_props = !!string_intervals (args[0]); */
+
+/*   /\* Upper bound on number of format specs.  Each uses at least 2 chars.  *\/ */
+/*   ptrdiff_t nspec_bound = SCHARS (args[0]) >> 1; */
+
+/*   /\* Allocate the info and discarded tables.  *\/ */
+/*   ptrdiff_t info_size, alloca_size; */
+/*   if (INT_MULTIPLY_WRAPV (nspec_bound, sizeof *info, &info_size) */
+/*       || INT_ADD_WRAPV (formatlen, info_size, &alloca_size) */
+/*       || SIZE_MAX < alloca_size) */
+/*     memory_full (SIZE_MAX); */
+/*   info = SAFE_ALLOCA (alloca_size); */
+/*   /\* discarded[I] is 1 if byte I of the format */
+/*      string was not copied into the output. */
+/*      It is 2 if byte I was not the first byte of its character.  *\/ */
+/*   char *discarded = (char *) &info[nspec_bound]; */
+/*   memset (discarded, 0, formatlen); */
+
+/*   /\* Try to determine whether the result should be multibyte. */
+/*      This is not always right; sometimes the result needs to be multibyte */
+/*      because of an object that we will pass through prin1. */
+/*      or because a grave accent or apostrophe is requoted, */
+/*      and in that case, we won't know it here.  *\/ */
+
+/*   /\* True if the output should be a multibyte string, */
+/*      which is true if any of the inputs is one.  *\/ */
+/*   bool multibyte = multibyte_format; */
+/*   for (ptrdiff_t i = 1; !multibyte && i < nargs; i++) */
+/*     if (STRINGP (args[i]) && STRING_MULTIBYTE (args[i])) */
+/*       multibyte = true; */
+
+/*   Lisp_Object quoting_style = message ? Ftext_quoting_style () : Qnil; */
+
+/*   ptrdiff_t ispec; */
+/*   ptrdiff_t nspec = 0; */
+
+/*   /\* True if a string needs to be allocated to hold the result.  *\/ */
+/*   bool new_result = false; */
+
+/*   /\* If we start out planning a unibyte result, */
+/*      then discover it has to be multibyte, we jump back to retry.  *\/ */
+/*  retry: */
+
+/*   p = buf; */
+/*   nchars = 0; */
+
+/*   /\* N is the argument index, ISPEC is the specification index.  *\/ */
+/*   n = 0; */
+/*   ispec = 0; */
+
+/*   /\* Scan the format and store result in BUF.  *\/ */
+/*   format = format_start; */
+/*   end = format + formatlen; */
+/*   maybe_combine_byte = false; */
+
+/*   while (format != end) */
+/*     { */
+/*       /\* The values of N, ISPEC, and FORMAT when the loop body is */
+/*          entered.  *\/ */
+/*       ptrdiff_t n0 = n; */
+/*       ptrdiff_t ispec0 = ispec; */
+/*       char *format0 = format; */
+/*       char const *convsrc = format; */
+/*       unsigned char format_char = *format++; */
+
+/*       /\* Number of bytes to be preallocated for the next directive's */
+/* 	 output.  At the end of each iteration this is at least */
+/* 	 CONVBYTES_ROOM, and is greater if the current directive */
+/* 	 output was so large that it will be retried after buffer */
+/* 	 reallocation.  *\/ */
+/*       ptrdiff_t convbytes = 1; */
+/*       enum { CONVBYTES_ROOM = SPRINTF_BUFSIZE - 1 }; */
+/*       eassert (p <= buf + bufsize - SPRINTF_BUFSIZE); */
+
+/*       if (format_char == '%') */
+/* 	{ */
+/* 	  /\* General format specifications look like */
+
+/* 	     '%' [field-number] [flags] [field-width] [precision] format */
+
+/* 	     where */
+
+/*              field-number ::= [0-9]+ '$' */
+/* 	     flags ::= [-+0# ]+ */
+/* 	     field-width ::= [0-9]+ */
+/* 	     precision ::= '.' [0-9]* */
+
+/* 	     If present, a field-number specifies the argument number */
+/* 	     to substitute.  Otherwise, the next argument is taken. */
+
+/* 	     If a field-width is specified, it specifies to which width */
+/* 	     the output should be padded with blanks, if the output */
+/* 	     string is shorter than field-width. */
+
+/* 	     If precision is specified, it specifies the number of */
+/* 	     digits to print after the '.' for floats, or the max. */
+/* 	     number of chars to print from a string.  *\/ */
+
+/* 	  ptrdiff_t num; */
+/* 	  char *num_end; */
+/* 	  if (c_isdigit (*format)) */
+/* 	    { */
+/* 	      num = str2num (format, &num_end); */
+/* 	      if (*num_end == '$') */
+/* 		{ */
+/* 		  n = num - 1; */
+/* 		  format = num_end + 1; */
+/* 		} */
+/* 	    } */
+
+/* 	  bool minus_flag = false; */
+/* 	  bool  plus_flag = false; */
+/* 	  bool space_flag = false; */
+/* 	  bool sharp_flag = false; */
+/* 	  bool  zero_flag = false; */
+
+/* 	  for (; ; format++) */
+/* 	    { */
+/* 	      switch (*format) */
+/* 		{ */
+/* 		case '-': minus_flag = true; continue; */
+/* 		case '+':  plus_flag = true; continue; */
+/* 		case ' ': space_flag = true; continue; */
+/* 		case '#': sharp_flag = true; continue; */
+/* 		case '0':  zero_flag = true; continue; */
+/* 		} */
+/* 	      break; */
+/* 	    } */
+
+/* 	  /\* Ignore flags when sprintf ignores them.  *\/ */
+/* 	  space_flag &= ! plus_flag; */
+/* 	  zero_flag &= ! minus_flag; */
+
+/* 	  num = str2num (format, &num_end); */
+/* 	  if (max_bufsize <= num) */
+/* 	    string_overflow (); */
+/* 	  ptrdiff_t field_width = num; */
+
+/* 	  bool precision_given = *num_end == '.'; */
+/* 	  ptrdiff_t precision = (precision_given */
+/* 				 ? str2num (num_end + 1, &num_end) */
+/* 				 : PTRDIFF_MAX); */
+/* 	  format = num_end; */
+
+/* 	  if (format == end) */
+/* 	    error ("Format string ends in middle of format specifier"); */
+
+/* 	  char conversion = *format++; */
+/* 	  memset (&discarded[format0 - format_start], 1, */
+/* 		  format - format0 - (conversion == '%')); */
+/* 	  info[ispec].fbeg = format0 - format_start; */
+/* 	  if (conversion == '%') */
+/* 	    { */
+/* 	      new_result = true; */
+/* 	      goto copy_char; */
+/* 	    } */
+
+/* 	  ++n; */
+/* 	  if (! (n < nargs)) */
+/* 	    error ("Not enough arguments for format string"); */
+
+/* 	  struct info *spec = &info[ispec++]; */
+/* 	  if (nspec < ispec) */
+/* 	    { */
+/* 	      spec->argument = args[n]; */
+/* 	      spec->intervals = false; */
+/* 	      nspec = ispec; */
+/* 	    } */
+/* 	  Lisp_Object arg = spec->argument; */
+
+/* 	  /\* For 'S', prin1 the argument, and then treat like 's'. */
+/* 	     For 's', princ any argument that is not a string or */
+/* 	     symbol.  But don't do this conversion twice, which might */
+/* 	     happen after retrying.  *\/ */
+/* 	  if ((conversion == 'S' */
+/* 	       || (conversion == 's' */
+/* 		   && ! STRINGP (arg) && ! SYMBOLP (arg)))) */
+/* 	    { */
+/* 	      if (EQ (arg, args[n])) */
+/* 		{ */
+/* 		  Lisp_Object noescape = conversion == 'S' ? Qnil : Qt; */
+/* 		  spec->argument = arg = Fprin1_to_string (arg, noescape, Qnil); */
+/* 		  if (STRING_MULTIBYTE (arg) && ! multibyte) */
+/* 		    { */
+/* 		      multibyte = true; */
+/* 		      goto retry; */
+/* 		    } */
+/* 		} */
+/* 	      conversion = 's'; */
+/* 	    } */
+/* 	  else if (conversion == 'c') */
+/* 	    { */
+/* 	      if (FIXNUMP (arg) && ! ASCII_CHAR_P (XFIXNUM (arg))) */
+/* 		{ */
+/* 		  if (!multibyte) */
+/* 		    { */
+/* 		      multibyte = true; */
+/* 		      goto retry; */
+/* 		    } */
+/* 		  spec->argument = arg = Fchar_to_string (arg); */
+/* 		} */
+
+/* 	      if (!EQ (arg, args[n])) */
+/* 		conversion = 's'; */
+/* 	      zero_flag = false; */
+/* 	    } */
+
+/* 	  if (SYMBOLP (arg)) */
+/* 	    { */
+/* 	      spec->argument = arg = SYMBOL_NAME (arg); */
+/* 	      if (STRING_MULTIBYTE (arg) && ! multibyte) */
+/* 		{ */
+/* 		  multibyte = true; */
+/* 		  goto retry; */
+/* 		} */
+/* 	    } */
+
+/* 	  bool float_conversion */
+/* 	    = conversion == 'e' || conversion == 'f' || conversion == 'g'; */
+
+/* 	  if (conversion == 's') */
+/* 	    { */
+/* 	      if (format == end && format - format_start == 2 */
+/* 		  && ! string_intervals (args[0])) */
+/* 		{ */
+/* 		  val = arg; */
+/* 		  goto return_val; */
+/* 		} */
+
+/* 	      /\* handle case (precision[n] >= 0) *\/ */
+
+/* 	      ptrdiff_t prec = -1; */
+/* 	      if (precision_given) */
+/* 		prec = precision; */
+
+/* 	      /\* lisp_string_width ignores a precision of 0, but GNU */
+/* 		 libc functions print 0 characters when the precision */
+/* 		 is 0.  Imitate libc behavior here.  Changing */
+/* 		 lisp_string_width is the right thing, and will be */
+/* 		 done, but meanwhile we work with it. *\/ */
+
+/* 	      ptrdiff_t width, nbytes; */
+/* 	      ptrdiff_t nchars_string; */
+/* 	      if (prec == 0) */
+/* 		width = nchars_string = nbytes = 0; */
+/* 	      else */
+/* 		{ */
+/* 		  ptrdiff_t nch, nby; */
+/* 		  nchars_string = SCHARS (arg); */
+/* 		  width = lisp_string_width (arg, 0, nchars_string, prec, */
+/* 					     &nch, &nby, false); */
+/* 		  if (prec < 0) */
+/* 		    nbytes = SBYTES (arg); */
+/* 		  else */
+/* 		    { */
+/* 		      nchars_string = nch; */
+/* 		      nbytes = nby; */
+/* 		    } */
+/* 		} */
+
+/* 	      convbytes = nbytes; */
+/* 	      if (convbytes && multibyte && ! STRING_MULTIBYTE (arg)) */
+/* 		convbytes = count_size_as_multibyte (SDATA (arg), nbytes); */
+
+/* 	      ptrdiff_t padding */
+/* 		= width < field_width ? field_width - width : 0; */
+
+/* 	      if (max_bufsize - padding <= convbytes) */
+/* 		string_overflow (); */
+/* 	      convbytes += padding; */
+/* 	      if (convbytes <= buf + bufsize - p) */
+/* 		{ */
+/* 		  /\* If the format spec has properties, we should account */
+/* 		     for the padding on the left in the info[] array.  *\/ */
+/* 		  if (fmt_props) */
+/* 		    spec->start = nchars; */
+/* 		  if (! minus_flag) */
+/* 		    { */
+/* 		      memset (p, ' ', padding); */
+/* 		      p += padding; */
+/* 		      nchars += padding; */
+/* 		    } */
+/* 		  /\* If the properties will come from the argument, we */
+/* 		     don't extend them to the left due to padding.  *\/ */
+/* 		  if (!fmt_props) */
+/* 		    spec->start = nchars; */
+
+/* 		  if (p > buf */
+/* 		      && multibyte */
+/* 		      && !ASCII_CHAR_P (*((unsigned char *) p - 1)) */
+/* 		      && STRING_MULTIBYTE (arg) */
+/* 		      && !CHAR_HEAD_P (SREF (arg, 0))) */
+/* 		    maybe_combine_byte = true; */
+
+/* 		  p += copy_text (SDATA (arg), (unsigned char *) p, */
+/* 				  nbytes, */
+/* 				  STRING_MULTIBYTE (arg), multibyte); */
+
+/* 		  nchars += nchars_string; */
+
+/* 		  if (minus_flag) */
+/* 		    { */
+/* 		      memset (p, ' ', padding); */
+/* 		      p += padding; */
+/* 		      nchars += padding; */
+/* 		    } */
+/* 		  spec->end = nchars; */
+
+/* 		  /\* If this argument has text properties, record where */
+/* 		     in the result string it appears.  *\/ */
+/* 		  if (string_intervals (arg)) */
+/* 		    spec->intervals = arg_intervals = true; */
+
+/* 		  new_result = true; */
+/* 		  convbytes = CONVBYTES_ROOM; */
+/* 		} */
+/* 	    } */
+/* 	  else if (! (conversion == 'c' || conversion == 'd' */
+/* 		      || float_conversion || conversion == 'i' */
+/* 		      || conversion == 'o' || conversion == 'x' */
+/* 		      || conversion == 'X')) */
+/* 	    { */
+/* 	      unsigned char *p = (unsigned char *) format - 1; */
+/* 	      if (multibyte_format) */
+/* 		error ("Invalid format operation %%%c", STRING_CHAR (p)); */
+/* 	      else */
+/* 		error (*p <= 127 ? "Invalid format operation %%%c" */
+/* 		                 : "Invalid format operation char #o%03o", */
+/* 		       *p); */
+/* 	    } */
+/* 	  else if (! (FIXNUMP (arg) || ((BIGNUMP (arg) || FLOATP (arg)) */
+/* 					&& conversion != 'c'))) */
+/* 	    error ("Format specifier doesn't match argument type"); */
+/* 	  else */
+/* 	    { */
+/* 	      /\* Length of PRIdMAX without the trailing "d".  *\/ */
+/* 	      enum { pMlen = sizeof PRIdMAX - 2 }; */
+
+/* 	      /\* Avoid undefined behavior in underlying sprintf.  *\/ */
+/* 	      if (conversion == 'd' || conversion == 'i') */
+/* 		sharp_flag = false; */
+
+/* 	      /\* Create the copy of the conversion specification, with */
+/* 		 any width and precision removed, with ".*" inserted, */
+/* 		 with "L" possibly inserted for floating-point formats, */
+/* 		 and with PRIdMAX (sans "d") inserted for integer formats. */
+/* 		 At most two flags F can be specified at once.  *\/ */
+/* 	      char convspec[sizeof "%FF.*d" + max (sizeof "L" - 1, pMlen)]; */
+/* 	      char *f = convspec; */
+/* 	      *f++ = '%'; */
+/* 	      /\* MINUS_FLAG and ZERO_FLAG are dealt with later.  *\/ */
+/* 	      *f = '+'; f +=  plus_flag; */
+/* 	      *f = ' '; f += space_flag; */
+/* 	      *f = '#'; f += sharp_flag; */
+/* 	      *f++ = '.'; */
+/* 	      *f++ = '*'; */
+/* 	      if (! (float_conversion || conversion == 'c')) */
+/* 		{ */
+/* 		  memcpy (f, PRIdMAX, pMlen); */
+/* 		  f += pMlen; */
+/* 		  zero_flag &= ! precision_given; */
+/* 		} */
+/* 	      *f++ = conversion; */
+/* 	      *f = '\0'; */
+
+/* 	      int prec = -1; */
+/* 	      if (precision_given) */
+/* 		prec = min (precision, USEFUL_PRECISION_MAX); */
+
+/* 	      /\* Characters to be inserted after spaces and before */
+/* 		 leading zeros.  This can occur with bignums, since */
+/* 		 bignum_to_string does only leading '-'.  *\/ */
+/* 	      char prefix[sizeof "-0x" - 1]; */
+/* 	      int prefixlen = 0; */
+
+/* 	      /\* Use sprintf or bignum_to_string to format this number.  Omit */
+/* 		 padding and excess precision, though, because sprintf limits */
+/* 		 output length to INT_MAX and bignum_to_string doesn't */
+/* 		 do padding or precision. */
+
+/* 		 Use five sprintf conversions: double, long double, unsigned */
+/* 		 char (passed as int), wide signed int, and wide */
+/* 		 unsigned int.  Treat them separately because the */
+/* 		 sprintf ABI is sensitive to which type is passed.  Be */
+/* 		 careful about integer overflow, NaNs, infinities, and */
+/* 		 conversions; for example, the min and max macros are */
+/* 		 not suitable here.  *\/ */
+/* 	      ptrdiff_t sprintf_bytes; */
+/* 	      if (float_conversion) */
+/* 		{ */
+/* 		  /\* Format as a long double if the arg is an integer */
+/* 		     that would lose less information than when formatting */
+/* 		     it as a double.  Otherwise, format as a double; */
+/* 		     this is likely to be faster and better-tested.  *\/ */
+
+/* 		  bool format_as_long_double = false; */
+/* 		  double darg; */
+/* 		  long double ldarg UNINIT; */
+
+/* 		  if (FLOATP (arg)) */
+/* 		    darg = XFLOAT_DATA (arg); */
+/* 		  else */
+/* 		    { */
+/* 		      bool format_bignum_as_double = false; */
+/* 		      if (LDBL_MANT_DIG <= DBL_MANT_DIG) */
+/* 			{ */
+/* 			  if (FIXNUMP (arg)) */
+/* 			    darg = XFIXNUM (arg); */
+/* 			  else */
+/* 			    format_bignum_as_double = true; */
+/* 			} */
+/* 		      else */
+/* 			{ */
+/* 			  if (INTEGERP (arg)) */
+/* 			    { */
+/* 			      intmax_t iarg; */
+/* 			      uintmax_t uarg; */
+/* 			      if (integer_to_intmax (arg, &iarg)) */
+/* 				ldarg = iarg; */
+/* 			      else if (integer_to_uintmax (arg, &uarg)) */
+/* 				ldarg = uarg; */
+/* 			      else */
+/* 				format_bignum_as_double = true; */
+/* 			    } */
+/* 			  if (!format_bignum_as_double) */
+/* 			    { */
+/* 			      darg = ldarg; */
+/* 			      format_as_long_double = darg != ldarg; */
+/* 			    } */
+/* 			} */
+/* 		      if (format_bignum_as_double) */
+/* 			darg = bignum_to_double (arg); */
+/* 		    } */
+
+/* 		  if (format_as_long_double) */
+/* 		    { */
+/* 		      f[-1] = 'L'; */
+/* 		      *f++ = conversion; */
+/* 		      *f = '\0'; */
+/* 		      sprintf_bytes = sprintf (p, convspec, prec, ldarg); */
+/* 		    } */
+/* 		  else */
+/* 		    sprintf_bytes = sprintf (p, convspec, prec, darg); */
+/* 		} */
+/* 	      else if (conversion == 'c') */
+/* 		{ */
+/* 		  /\* Don't use sprintf here, as it might mishandle prec.  *\/ */
+/* 		  p[0] = XFIXNUM (arg); */
+/* 		  p[1] = '\0'; */
+/* 		  sprintf_bytes = prec != 0; */
+/* 		} */
+/* 	      else if (BIGNUMP (arg)) */
+/* 	      bignum_arg: */
+/* 		{ */
+/* 		  int base = ((conversion == 'd' || conversion == 'i') ? 10 */
+/* 			      : conversion == 'o' ? 8 : 16); */
+/* 		  sprintf_bytes = bignum_bufsize (arg, base); */
+/* 		  if (sprintf_bytes <= buf + bufsize - p) */
+/* 		    { */
+/* 		      int signedbase = conversion == 'X' ? -base : base; */
+/* 		      sprintf_bytes = bignum_to_c_string (p, sprintf_bytes, */
+/* 							  arg, signedbase); */
+/* 		      bool negative = p[0] == '-'; */
+/* 		      prec = min (precision, sprintf_bytes - prefixlen); */
+/* 		      prefix[prefixlen] = plus_flag ? '+' : ' '; */
+/* 		      prefixlen += (plus_flag | space_flag) & !negative; */
+/* 		      prefix[prefixlen] = '0'; */
+/* 		      prefix[prefixlen + 1] = conversion; */
+/* 		      prefixlen += sharp_flag && base == 16 ? 2 : 0; */
+/* 		    } */
+/* 		} */
+/* 	      else if (conversion == 'd' || conversion == 'i') */
+/* 		{ */
+/* 		  if (FIXNUMP (arg)) */
+/* 		    { */
+/* 		      intmax_t x = XFIXNUM (arg); */
+/* 		      sprintf_bytes = sprintf (p, convspec, prec, x); */
+/* 		    } */
+/* 		  else */
+/* 		    { */
+/* 		      strcpy (f - pMlen - 1, "f"); */
+/* 		      double x = XFLOAT_DATA (arg); */
+
+/* 		      /\* Truncate and then convert -0 to 0, to be more */
+/* 			 consistent with %x etc.; see Bug#31938.  *\/ */
+/* 		      x = trunc (x); */
+/* 		      x = x ? x : 0; */
+
+/* 		      sprintf_bytes = sprintf (p, convspec, 0, x); */
+/* 		      bool signedp = ! c_isdigit (p[0]); */
+/* 		      prec = min (precision, sprintf_bytes - signedp); */
+/* 		    } */
+/* 		} */
+/* 	      else */
+/* 		{ */
+/* 		  uintmax_t x; */
+/* 		  bool negative; */
+/* 		  if (FIXNUMP (arg)) */
+/* 		    { */
+/* 		      if (binary_as_unsigned) */
+/* 			{ */
+/* 			  x = XUFIXNUM (arg); */
+/* 			  negative = false; */
+/* 			} */
+/* 		      else */
+/* 			{ */
+/* 			  EMACS_INT i = XFIXNUM (arg); */
+/* 			  negative = i < 0; */
+/* 			  x = negative ? -i : i; */
+/* 			} */
+/* 		    } */
+/* 		  else */
+/* 		    { */
+/* 		      double d = XFLOAT_DATA (arg); */
+/* 		      double abs_d = fabs (d); */
+/* 		      if (abs_d < UINTMAX_MAX + 1.0) */
+/* 			{ */
+/* 			  negative = d <= -1; */
+/* 			  x = abs_d; */
+/* 			} */
+/* 		      else */
+/* 			{ */
+/* 			  arg = double_to_integer (d); */
+/* 			  goto bignum_arg; */
+/* 			} */
+/* 		    } */
+/* 		  p[0] = negative ? '-' : plus_flag ? '+' : ' '; */
+/* 		  bool signedp = negative | plus_flag | space_flag; */
+/* 		  sprintf_bytes = sprintf (p + signedp, convspec, prec, x); */
+/* 		  sprintf_bytes += signedp; */
+/* 		} */
+
+/* 	      /\* Now the length of the formatted item is known, except it omits */
+/* 		 padding and excess precision.  Deal with excess precision */
+/* 		 first.  This happens when the format specifies ridiculously */
+/* 		 large precision, or when %d or %i formats a float that would */
+/* 		 ordinarily need fewer digits than a specified precision, */
+/* 		 or when a bignum is formatted using an integer format */
+/* 		 with enough precision.  *\/ */
+/* 	      ptrdiff_t excess_precision */
+/* 		= precision_given ? precision - prec : 0; */
+/* 	      ptrdiff_t trailing_zeros = 0; */
+/* 	      if (excess_precision != 0 && float_conversion) */
+/* 		{ */
+/* 		  if (! c_isdigit (p[sprintf_bytes - 1]) */
+/* 		      || (conversion == 'g' */
+/* 			  && ! (sharp_flag && strchr (p, '.')))) */
+/* 		    excess_precision = 0; */
+/* 		  trailing_zeros = excess_precision; */
+/* 		} */
+/* 	      ptrdiff_t leading_zeros = excess_precision - trailing_zeros; */
+
+/* 	      /\* Compute the total bytes needed for this item, including */
+/* 		 excess precision and padding.  *\/ */
+/* 	      ptrdiff_t numwidth; */
+/* 	      if (INT_ADD_WRAPV (prefixlen + sprintf_bytes, excess_precision, */
+/* 				 &numwidth)) */
+/* 		numwidth = PTRDIFF_MAX; */
+/* 	      ptrdiff_t padding */
+/* 		= numwidth < field_width ? field_width - numwidth : 0; */
+/* 	      if (max_bufsize - (prefixlen + sprintf_bytes) <= excess_precision */
+/* 		  || max_bufsize - padding <= numwidth) */
+/* 		string_overflow (); */
+/* 	      convbytes = numwidth + padding; */
+
+/* 	      if (convbytes <= buf + bufsize - p) */
+/* 		{ */
+/* 		  bool signedp = p[0] == '-' || p[0] == '+' || p[0] == ' '; */
+/* 		  int beglen = (signedp */
+/* 				   + ((p[signedp] == '0' */
+/* 				       && (p[signedp + 1] == 'x' */
+/* 					   || p[signedp + 1] == 'X')) */
+/* 				      ? 2 : 0)); */
+/* 		  eassert (prefixlen == 0 || beglen == 0 */
+/* 			   || (beglen == 1 && p[0] == '-' */
+/* 			       && ! (prefix[0] == '-' || prefix[0] == '+' */
+/* 				     || prefix[0] == ' '))); */
+/* 		  if (zero_flag && 0 <= char_hexdigit (p[beglen])) */
+/* 		    { */
+/* 		      leading_zeros += padding; */
+/* 		      padding = 0; */
+/* 		    } */
+/* 		  if (leading_zeros == 0 && sharp_flag && conversion == 'o' */
+/* 		      && p[beglen] != '0') */
+/* 		    { */
+/* 		      leading_zeros++; */
+/* 		      padding -= padding != 0; */
+/* 		    } */
+
+/* 		  int endlen = 0; */
+/* 		  if (trailing_zeros */
+/* 		      && (conversion == 'e' || conversion == 'g')) */
+/* 		    { */
+/* 		      char *e = strchr (p, 'e'); */
+/* 		      if (e) */
+/* 			endlen = p + sprintf_bytes - e; */
+/* 		    } */
+
+/* 		  ptrdiff_t midlen = sprintf_bytes - beglen - endlen; */
+/* 		  ptrdiff_t leading_padding = minus_flag ? 0 : padding; */
+/* 		  ptrdiff_t trailing_padding = padding - leading_padding; */
+
+/* 		  /\* Insert padding and excess-precision zeros.  The output */
+/* 		     contains the following components, in left-to-right order: */
+
+/* 		     LEADING_PADDING spaces. */
+/* 		     BEGLEN bytes taken from the start of sprintf output. */
+/* 		     PREFIXLEN bytes taken from the start of the prefix array. */
+/* 		     LEADING_ZEROS zeros. */
+/* 		     MIDLEN bytes taken from the middle of sprintf output. */
+/* 		     TRAILING_ZEROS zeros. */
+/* 		     ENDLEN bytes taken from the end of sprintf output. */
+/* 		     TRAILING_PADDING spaces. */
+
+/* 		     The sprintf output is taken from the buffer starting at */
+/* 		     P and continuing for SPRINTF_BYTES bytes.  *\/ */
+
+/* 		  ptrdiff_t incr */
+/* 		    = (padding + leading_zeros + prefixlen */
+/* 		       + sprintf_bytes + trailing_zeros); */
+
+/* 		  /\* Optimize for the typical case with padding or zeros.  *\/ */
+/* 		  if (incr != sprintf_bytes) */
+/* 		    { */
+/* 		      /\* Move data to make room to insert spaces and '0's. */
+/* 		         As this may entail overlapping moves, process */
+/* 			 the output right-to-left and use memmove. */
+/* 			 With any luck this code is rarely executed.  *\/ */
+/* 		      char *src = p + sprintf_bytes; */
+/* 		      char *dst = p + incr; */
+/* 		      dst -= trailing_padding; */
+/* 		      memset (dst, ' ', trailing_padding); */
+/* 		      src -= endlen; */
+/* 		      dst -= endlen; */
+/* 		      memmove (dst, src, endlen); */
+/* 		      dst -= trailing_zeros; */
+/* 		      memset (dst, '0', trailing_zeros); */
+/* 		      src -= midlen; */
+/* 		      dst -= midlen; */
+/* 		      memmove (dst, src, midlen); */
+/* 		      dst -= leading_zeros; */
+/* 		      memset (dst, '0', leading_zeros); */
+/* 		      dst -= prefixlen; */
+/* 		      memcpy (dst, prefix, prefixlen); */
+/* 		      src -= beglen; */
+/* 		      dst -= beglen; */
+/* 		      memmove (dst, src, beglen); */
+/* 		      dst -= leading_padding; */
+/* 		      memset (dst, ' ', leading_padding); */
+/* 		    } */
+
+/* 		  p += incr; */
+/* 		  spec->start = nchars; */
+/* 		  spec->end = nchars += incr; */
+/* 		  new_result = true; */
+/* 		  convbytes = CONVBYTES_ROOM; */
+/* 		} */
+/* 	    } */
+/* 	} */
+/*       else */
+/* 	{ */
+/* 	  unsigned char str[MAX_MULTIBYTE_LENGTH]; */
+
+/* 	  if ((format_char == '`' || format_char == '\'') */
+/* 	      && EQ (quoting_style, Qcurve)) */
+/* 	    { */
+/* 	      if (! multibyte) */
+/* 		{ */
+/* 		  multibyte = true; */
+/* 		  goto retry; */
+/* 		} */
+/* 	      convsrc = format_char == '`' ? uLSQM : uRSQM; */
+/* 	      convbytes = 3; */
+/* 	      new_result = true; */
+/* 	    } */
+/* 	  else if (format_char == '`' && EQ (quoting_style, Qstraight)) */
+/* 	    { */
+/* 	      convsrc = "'"; */
+/* 	      new_result = true; */
+/* 	    } */
+/* 	  else */
+/* 	    { */
+/* 	      /\* Copy a single character from format to buf.  *\/ */
+/* 	      if (multibyte_format) */
+/* 		{ */
+/* 		  /\* Copy a whole multibyte character.  *\/ */
+/* 		  if (p > buf */
+/* 		      && !ASCII_CHAR_P (*((unsigned char *) p - 1)) */
+/* 		      && !CHAR_HEAD_P (format_char)) */
+/* 		    maybe_combine_byte = true; */
+
+/* 		  while (! CHAR_HEAD_P (*format)) */
+/* 		    format++; */
+
+/* 		  convbytes = format - format0; */
+/* 		  memset (&discarded[format0 + 1 - format_start], 2, */
+/* 			  convbytes - 1); */
+/* 		} */
+/* 	      else if (multibyte && !ASCII_CHAR_P (format_char)) */
+/* 		{ */
+/* 		  int c = BYTE8_TO_CHAR (format_char); */
+/* 		  convbytes = CHAR_STRING (c, str); */
+/* 		  convsrc = (char *) str; */
+/* 		  new_result = true; */
+/* 		} */
+/* 	    } */
+
+/* 	copy_char: */
+/* 	  memcpy (p, convsrc, convbytes); */
+/* 	  p += convbytes; */
+/* 	  nchars++; */
+/* 	  convbytes = CONVBYTES_ROOM; */
+/* 	} */
+
+/*       ptrdiff_t used = p - buf; */
+/*       ptrdiff_t buflen_needed; */
+/*       if (INT_ADD_WRAPV (used, convbytes, &buflen_needed)) */
+/* 	string_overflow (); */
+/*       if (bufsize <= buflen_needed) */
+/* 	{ */
+/* 	  if (max_bufsize <= buflen_needed) */
+/* 	    string_overflow (); */
+
+/* 	  /\* Either there wasn't enough room to store this conversion, */
+/* 	     or there won't be enough room to do a sprintf the next */
+/* 	     time through the loop.  Allocate enough room (and then some).  *\/ */
+
+/* 	  bufsize = (buflen_needed <= max_bufsize / 2 */
+/* 		     ? buflen_needed * 2 : max_bufsize); */
+
+/* 	  if (buf == initial_buffer) */
+/* 	    { */
+/* 	      buf = xmalloc (bufsize); */
+/* 	      buf_save_value_index = SPECPDL_INDEX (); */
+/* 	      record_unwind_protect_ptr (xfree, buf); */
+/* 	      memcpy (buf, initial_buffer, used); */
+/* 	    } */
+/* 	  else */
+/* 	    { */
+/* 	      buf = xrealloc (buf, bufsize); */
+/* 	      set_unwind_protect_ptr (buf_save_value_index, xfree, buf); */
+/* 	    } */
+
+/* 	  p = buf + used; */
+/* 	  if (convbytes != CONVBYTES_ROOM) */
+/* 	    { */
+/* 	      /\* There wasn't enough room for this conversion; do it over.  *\/ */
+/* 	      eassert (CONVBYTES_ROOM < convbytes); */
+/* 	      format = format0; */
+/* 	      n = n0; */
+/* 	      ispec = ispec0; */
+/* 	    } */
+/* 	} */
+/*     } */
+
+/*   if (bufsize < p - buf) */
+/*     emacs_abort (); */
+
+/*   if (! new_result) */
+/*     { */
+/*       val = args[0]; */
+/*       goto return_val; */
+/*     } */
+
+/*   if (maybe_combine_byte) */
+/*     nchars = multibyte_chars_in_text ((unsigned char *) buf, p - buf); */
+/*   val = make_specified_string (buf, nchars, p - buf, multibyte); */
+
+/*   /\* If the format string has text properties, or any of the string */
+/*      arguments has text properties, set up text properties of the */
+/*      result string.  *\/ */
+
+/*   if (string_intervals (args[0]) || arg_intervals) */
+/*     { */
+/*       /\* Add text properties from the format string.  *\/ */
+/*       Lisp_Object len = make_fixnum (SCHARS (args[0])); */
+/*       Lisp_Object props = text_property_list (args[0], make_fixnum (0), */
+/* 					      len, Qnil); */
+/*       if (CONSP (props)) */
+/* 	{ */
+/* 	  ptrdiff_t bytepos = 0, position = 0, translated = 0; */
+/* 	  ptrdiff_t fieldn = 0; */
+
+/* 	  /\* Adjust the bounds of each text property */
+/* 	     to the proper start and end in the output string.  *\/ */
+
+/* 	  /\* Put the positions in PROPS in increasing order, so that */
+/* 	     we can do (effectively) one scan through the position */
+/* 	     space of the format string.  *\/ */
+/* 	  props = Fnreverse (props); */
+
+/* 	  /\* BYTEPOS is the byte position in the format string, */
+/* 	     POSITION is the untranslated char position in it, */
+/* 	     TRANSLATED is the translated char position in BUF, */
+/* 	     and ARGN is the number of the next arg we will come to.  *\/ */
+/* 	  for (Lisp_Object list = props; CONSP (list); list = XCDR (list)) */
+/* 	    { */
+/* 	      Lisp_Object item = XCAR (list); */
+
+/* 	      /\* First adjust the property start position.  *\/ */
+/* 	      ptrdiff_t pos = XFIXNUM (XCAR (item)); */
+
+/* 	      /\* Advance BYTEPOS, POSITION, TRANSLATED and ARGN */
+/* 		 up to this position.  *\/ */
+/* 	      for (; position < pos; bytepos++) */
+/* 		{ */
+/* 		  if (! discarded[bytepos]) */
+/* 		    position++, translated++; */
+/* 		  else if (discarded[bytepos] == 1) */
+/* 		    { */
+/* 		      position++; */
+/* 		      if (fieldn < nspec */
+/* 			  && bytepos >= info[fieldn].fbeg */
+/* 			  && translated == info[fieldn].start) */
+/* 			{ */
+/* 			  translated += info[fieldn].end - info[fieldn].start; */
+/* 			  fieldn++; */
+/* 			} */
+/* 		    } */
+/* 		} */
+
+/* 	      XSETCAR (item, make_fixnum (translated)); */
+
+/* 	      /\* Likewise adjust the property end position.  *\/ */
+/* 	      pos = XFIXNUM (XCAR (XCDR (item))); */
+
+/* 	      for (; position < pos; bytepos++) */
+/* 		{ */
+/* 		  if (! discarded[bytepos]) */
+/* 		    position++, translated++; */
+/* 		  else if (discarded[bytepos] == 1) */
+/* 		    { */
+/* 		      position++; */
+/* 		      if (fieldn < nspec */
+/* 			  && bytepos >= info[fieldn].fbeg */
+/* 			  && translated == info[fieldn].start) */
+/* 			{ */
+/* 			  translated += info[fieldn].end - info[fieldn].start; */
+/* 			  fieldn++; */
+/* 			} */
+/* 		    } */
+/* 		} */
+
+/* 	      XSETCAR (XCDR (item), make_fixnum (translated)); */
+/* 	    } */
+
+/* 	  add_text_properties_from_list (val, props, make_fixnum (0)); */
+/* 	} */
+
+/*       /\* Add text properties from arguments.  *\/ */
+/*       if (arg_intervals) */
+/* 	for (ptrdiff_t i = 0; i < nspec; i++) */
+/* 	  if (info[i].intervals) */
+/* 	    { */
+/* 	      len = make_fixnum (SCHARS (info[i].argument)); */
+/* 	      Lisp_Object new_len = make_fixnum (info[i].end - info[i].start); */
+/* 	      props = text_property_list (info[i].argument, */
+/*                                           make_fixnum (0), len, Qnil); */
+/* 	      props = extend_property_ranges (props, len, new_len); */
+/* 	      /\* If successive arguments have properties, be sure that */
+/* 		 the value of `composition' property be the copy.  *\/ */
+/* 	      if (1 < i && info[i - 1].end) */
+/* 		make_composition_value_copy (props); */
+/* 	      add_text_properties_from_list (val, props, */
+/* 					     make_fixnum (info[i].start)); */
+/* 	    } */
+/*     } */
+
+/*  return_val: */
+/*   /\* If we allocated BUF or INFO with malloc, free it too.  *\/ */
+/*   SAFE_FREE (); */
+/*   alien_send_message2n("styled-format", val, make_fixnum(message), nargs, args); */
+/*   return val; */
+/* } */
 
 DEFUN ("char-equal", Fchar_equal, Schar_equal, 2, 2, 0,
        doc: /* Return t if two characters match, optionally ignoring case.
