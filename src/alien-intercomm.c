@@ -148,11 +148,16 @@ void fwrite_lisp_binary_object(Lisp_Object obj, FILE *stream) {
     break;
     case Lisp_Vectorlike:
     {
-      char str[100];
-      enum pvec_type vector_type = PSEUDOVECTOR_TYPE (XVECTOR (obj));
-      sprintf(str, "unsupported vector type %d",
-	      vector_type);
-      fwrite_lisp_binary_object (build_string(str), stream);
+      long vector_type = PSEUDOVECTOR_TYPE (XVECTOR (obj));
+      type = 'V';
+      fwrite(&type, 1, 1, stream);
+      fwrite(&vector_type, sizeof(long), 1, stream);
+      long len = ASIZE(obj);
+      fwrite(&len, sizeof(long), 1, stream);
+      for (ptrdiff_t idx = 0; idx < len; idx ++)
+	{
+	  fwrite_lisp_binary_object(AREF(obj, idx), stream);
+	}
     }
     break;
     default:
@@ -167,19 +172,19 @@ Lisp_Object fread_lisp_binary_object(FILE *stream) {
   switch (c)
     {
     case 'I':
-    {
-      long value = 0;
-      fread (&value, sizeof(long), 1, stream);
-      result = make_fixnum(value);
-    }
-    break;
+      {
+	long value = 0;
+	fread (&value, sizeof(long), 1, stream);
+	result = make_fixnum(value);
+      }
+      break;
     case 'D':
-    {
-      double value = 0;
-      fread(&value, sizeof(double), 1, stream);
-      result = make_float(value);
-    }
-    break;
+      {
+	double value = 0;
+	fread(&value, sizeof(double), 1, stream);
+	result = make_float(value);
+      }
+      break;
     case 'A':
       {
 	long len = 0;
@@ -190,10 +195,10 @@ Lisp_Object fread_lisp_binary_object(FILE *stream) {
 	result = make_string(data, len);
 	/* printf("type %ld\n", XTYPE(result)); */
 	free (data);
-    }
-    break;
+      }
+      break;
     case 'S':
-    {
+      {
 	long len = 0;
 	fread (&len, sizeof(long), 1, stream);
 	char* data = malloc(len + 1);
@@ -201,15 +206,29 @@ Lisp_Object fread_lisp_binary_object(FILE *stream) {
 	data[len] = 0;
 	result = intern(data);
 	free (data);
-    }
-    break;
+      }
+      break;
     case 'C':
-    {
-      Lisp_Object car = fread_lisp_binary_object(stream);
-      Lisp_Object cdr = fread_lisp_binary_object(stream);
-      result = Fcons(car, cdr);
-    }
-    break;
+      {
+	Lisp_Object car = fread_lisp_binary_object(stream);
+	Lisp_Object cdr = fread_lisp_binary_object(stream);
+	result = Fcons(car, cdr);
+      }
+      break;
+    case 'V':
+      {
+	long vector_type = 0;
+	fread (&vector_type, sizeof(long), 1, stream);
+	long len = 0;
+	fread (&len, sizeof(long), 1, stream);
+	result = make_vector(len, Qnil);
+	XSETPVECTYPE (XVECTOR (result), vector_type);
+	for (ptrdiff_t idx = 0; idx < len; idx ++)
+	  {
+	    ASET(result, idx, fread_lisp_binary_object(stream));
+	  }
+      }
+      break;
     default:
       result = build_string("unsupported type");
     }
@@ -439,6 +458,14 @@ void alien_send_message2n(const char* func, Lisp_Object arg0, Lisp_Object arg1, 
 
 Lisp_Object alien_rpc (char* func, ptrdiff_t argc, Lisp_Object *argv)
 {
+  printf("rpc %s\n", func);
+  int lock_status = mtx_trylock(&intercomm_mutex);
+  if (lock_status != 0)
+  {
+    printf("taking rpc lock failed\n");
+    alien_print_backtrace();
+    emacs_abort();
+  }
 
   char *sbuffer;
   size_t sbuffer_len;
@@ -462,13 +489,6 @@ Lisp_Object alien_rpc (char* func, ptrdiff_t argc, Lisp_Object *argv)
   fwrite_lisp_binary_object(context, sstream);
   fclose(sstream);
   ulong message_length = sbuffer_len;
-  int lock_status = mtx_trylock(&intercomm_mutex);
-  if (lock_status != 0)
-  {
-    printf("taking rpc lock failed\n");
-    alien_print_backtrace();
-    emacs_abort();
-  }
   int intercomm_socket = open_intercomm_connection();
   /* printf("sending message func:%s (message length %ld)\n", func, message_length); */
   check_socket_operation(send(intercomm_socket, &message_length, sizeof(ulong), 0));

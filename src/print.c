@@ -1116,7 +1116,10 @@ print_error_message (Lisp_Object data, Lisp_Object stream, const char *context,
     const char *sep = ": ";
 
     if (!STRINGP (errmsg))
-      write_string ("peculiar error", stream);
+      {
+	alien_print_backtrace ();
+	write_string ("peculiar error", stream);
+      }
     else if (SCHARS (errmsg))
       Fprinc (errmsg, stream);
     else

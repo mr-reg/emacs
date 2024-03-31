@@ -1189,6 +1189,9 @@ Lisp_Object
 internal_catch (Lisp_Object tag,
 		Lisp_Object (*func) (Lisp_Object), Lisp_Object arg)
 {
+  /* printf("internal_catch \n"); */
+  /* debug_lisp_object("tag", tag); */
+  /* debug_lisp_object("arg", arg); */
   /* This structure is made part of the chain `catchlist'.  */
   struct handler *c = push_handler (tag, CATCHER);
 

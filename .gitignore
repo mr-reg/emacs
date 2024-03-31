@@ -338,4 +338,4 @@ lib-src/seccomp-filter-exec.pfc
 # GDB history
 .gdb_history
 _gdb_history
-alien-injection.c
+alien-injection.*
