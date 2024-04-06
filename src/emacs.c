@@ -427,6 +427,7 @@ using_utf8 (void)
 AVOID
 terminate_due_to_signal (int sig, int backtrace_limit)
 {
+  printf("terminating by signal %d\n", sig);
   signal (sig, SIG_DFL);
 
   if (attempt_orderly_shutdown_on_fatal_signal)
