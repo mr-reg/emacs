@@ -1,9 +1,9 @@
 #include "alien-intercomm.h"
 #include "alien-injection.h"
 #include "buffer.h"
-#include <arpa/inet.h> // inet_addr()
-#include <netdb.h>
-#include <sys/socket.h>
+/* #include <arpa/inet.h> // inet_addr() */
+/* #include <netdb.h> */
+/* #include <sys/socket.h> */
 #include <execinfo.h>
 #include <stdio.h>
 #include <strings.h> // bzero()
@@ -14,6 +14,7 @@
 /* #include <signal.h> */
 #include <threads.h>
 #include "lisp.h"
+#include <zmq.h>
 
 
 #define ALIEN_BACKTRACE_LIMIT 500
@@ -31,6 +32,8 @@ int ALIENP(Lisp_Object obj)
   return CONSP(obj) && EQ(XCAR(obj), Qalien_var);
 }
 
+void *zmq_context;
+void* zmq_client;
 
 mtx_t intercomm_mutex;
 char *backtrace_str[BACKTRACE_STR_SIZE];
@@ -68,43 +71,20 @@ static void intercomm_die (char* message)
 {
   printf("DIE %s\n", message);
   mtx_unlock(&intercomm_mutex);
-  exit(1);
+  emacs_abort();
+  /* exit(1); */
 }
 
-char intercomm_host[] = "127.0.0.1";
-int intercomm_port = 7447;
-static int open_intercomm_connection (void)
+static void zmq_check(ssize_t status)
 {
-  struct sockaddr_in servaddr;
-  // socket create and verification
-  int intercomm_socket = socket(AF_INET, SOCK_STREAM, 0);
-  if (intercomm_socket == -1) {
-    intercomm_die((char*)"intercomm socket creation failed.");
-  } 
-  bzero(&servaddr, sizeof(servaddr));
-
-  // assign IP, PORT
-  servaddr.sin_family = AF_INET;
-  servaddr.sin_addr.s_addr = inet_addr(intercomm_host);
-  servaddr.sin_port = htons(intercomm_port);
-
-  int retries = 3, result = -1;
-  while (retries > 0 && result != 0) {
-  // connect the client socket to server socket
-    result = connect(intercomm_socket, (struct sockaddr*)&servaddr, sizeof(servaddr));
-    if (result != 0)
-	{
-	  printf ("intercomm connection error, retrying\n");
-	  usleep (1000);
-	}
-    retries--;
-  } 
-  if (result != 0)
+  if (status != 0)
   {
-    intercomm_die ((char*)"intercomm connection failed.");
+    char buffer[200];
+    sprintf(buffer, "socket operation error, status=%ld", status);
+    /* intercomm_die(buffer); */
   }
-  return intercomm_socket;
 }
+
 
 void fwrite_lisp_binary_object(Lisp_Object obj, FILE *stream) {
   char type = 0;
@@ -287,7 +267,11 @@ Lisp_Object fread_lisp_binary_object(FILE *stream) {
       }
       break;
     default:
-      result = build_string("read: unsupported type");
+      {
+	char buffer[100];
+	sprintf (buffer, "read: unsupported type %d", c);
+	result = build_string (buffer);
+      }
     }
   return result;
 }
@@ -375,149 +359,6 @@ void debug_lisp_object (const char* message, Lisp_Object obj)
   printf("\n");
 }
 
-static void check_socket_operation(ssize_t status)
-{
-  if (status == -1)
-  {
-    char buffer[200];
-    sprintf(buffer, "socket operation error, status=%ld", status);
-    /* intercomm_die(buffer); */
-  }
-}
-
-void alien_send_message (char* func, ptrdiff_t argc, Lisp_Object *argv)
-{
-  /* printf ("sending message %s\n", func); */
-  int failed = 1;
-  while (failed) {
-    
-    int lock_status = mtx_trylock(&intercomm_mutex);
-    if (lock_status != 0)
-      {
-	printf("taking message lock failed\n");
-	alien_print_backtrace();
-	emacs_abort();
-      }
-    message_id ++;
-    #ifdef RPC_DEBUG
-    printf ("message[%ld] locked %s\n", message_id, func);
-    #endif
-    char *sbuffer;
-    size_t sbuffer_len;
-    FILE *sstream = open_memstream(&sbuffer, &sbuffer_len);
-    /* fwrite_lisp_binary_object(make_fixnum(argc + 1), stdout); */
-    /* printf("AAAA"); */
-    /* fwrite_lisp_binary_object(build_string(func), stdout); */
-    /* printf("AAAA"); */
-    fwrite_lisp_binary_object(make_fixnum(argc + 1), sstream);
-    fwrite_lisp_binary_object(build_string(func), sstream);
-
-    
-    for (int argi = 0; argi < argc; argi++)
-      {
-	fwrite_lisp_binary_object(argv[argi], sstream);
-      }
-    /* fprintf(sstream, "#|%s|#", get_alien_backtrace()); */
-    fclose (sstream);
-    ulong message_length = sbuffer_len;
-    /* printf ("sending message %s\n", sbuffer); */
-    int intercomm_socket = open_intercomm_connection ();
-    check_socket_operation (
-			    send (intercomm_socket, &message_length, sizeof (ulong), 0));
-    ulong message_type = MESSAGE_TYPE_NOTIFY_S_EXPR;
-    check_socket_operation (
-			    send (intercomm_socket, &message_type, sizeof (ulong), 0));
-    /* printf ("sending message body\n"); */
-    check_socket_operation (
-			    send (intercomm_socket, sbuffer, message_length, 0));
-    free (sbuffer);
-    /* printf ("readng message length\n"); */
-    check_socket_operation (recv (intercomm_socket, &message_length, sizeof (ulong), 0));
-    /* printf ("readng message type\n"); */
-    check_socket_operation (recv (intercomm_socket, &message_type, sizeof (ulong), 0));
-    char *response = malloc (message_length + 1);
-    /* printf ("readng message body\n"); */
-    check_socket_operation (recv (intercomm_socket, response, message_length, 0));
-    response[message_length] = 0;
-    /* printf("response %s\n", response); */
-    free (response);
-    close (intercomm_socket);
-    failed = 0;
-    mtx_unlock (&intercomm_mutex);
-    #ifdef RPC_DEBUG
-    printf("message sent\n");
-    #endif
-  }
-}
-
-void alien_send_message0(const char* func)
-{
-  Lisp_Object alien_data[] = {  };
-  alien_send_message((char*)func, 0, alien_data);
-}
-
-void alien_send_message1(const char* func, Lisp_Object arg0)
-{
-  Lisp_Object alien_data[] = { arg0 };
-  alien_send_message((char*)func, 1, alien_data);
-}
-
-void alien_send_message2(const char* func, Lisp_Object arg0, Lisp_Object arg1)
-{
-  Lisp_Object alien_data[] = { arg0, arg1 };
-  alien_send_message((char*)func, 2, alien_data);
-}
-
-void alien_send_message3(const char* func, Lisp_Object arg0, Lisp_Object arg1, Lisp_Object arg2)
-{
-  Lisp_Object alien_data[] = { arg0, arg1, arg2 };
-  alien_send_message((char*)func, 3, alien_data);
-}
-
-void alien_send_message4(const char* func, Lisp_Object arg0, Lisp_Object arg1, Lisp_Object arg2, Lisp_Object arg3)
-{
-  Lisp_Object alien_data[] = { arg0, arg1, arg2, arg3 };
-  alien_send_message((char*)func, 4, alien_data);
-}
-
-void alien_send_message5(const char* func, Lisp_Object arg0, Lisp_Object arg1, Lisp_Object arg2, Lisp_Object arg3, Lisp_Object arg4)
-{
-  Lisp_Object alien_data[] = { arg0, arg1, arg2, arg3, arg4 };
-  alien_send_message((char*)func, 5, alien_data);
-}
-
-void alien_send_message6(const char* func, Lisp_Object arg0, Lisp_Object arg1, Lisp_Object arg2, Lisp_Object arg3, Lisp_Object arg4, Lisp_Object arg5)
-{
-  Lisp_Object alien_data[] = { arg0, arg1, arg2, arg3, arg4, arg5 };
-  alien_send_message((char*)func, 6, alien_data);
-}
-
-void alien_send_message7(const char* func, Lisp_Object arg0, Lisp_Object arg1, Lisp_Object arg2, Lisp_Object arg3, Lisp_Object arg4, Lisp_Object arg5, Lisp_Object arg6)
-{
-  Lisp_Object alien_data[] = { arg0, arg1, arg2, arg3, arg4, arg5, arg6 };
-  alien_send_message((char*)func, 7, alien_data);
-}
-
-void alien_send_message1n(const char* func, Lisp_Object arg0, ptrdiff_t argc, Lisp_Object *argv)
-{
-  ptrdiff_t nargc = argc + 1;
-  Lisp_Object *alien_data = malloc (sizeof(Lisp_Object) * nargc);
-  alien_data[0] = arg0;
-  memcpy(alien_data + 1, argv, argc * sizeof(Lisp_Object));
-  alien_send_message((char*)func, nargc, alien_data);
-  free(alien_data);
-}
-
-void alien_send_message2n(const char* func, Lisp_Object arg0, Lisp_Object arg1, ptrdiff_t argc, Lisp_Object *argv)
-{
-  ptrdiff_t nargc = argc + 2;
-  Lisp_Object *alien_data = malloc (sizeof(Lisp_Object) * nargc);
-  alien_data[0] = arg0;
-  alien_data[1] = arg1;
-  memcpy(alien_data + 2, argv, argc * sizeof(Lisp_Object));
-  alien_send_message((char*)func, nargc, alien_data);
-  free(alien_data);
-}
 
 Lisp_Object alien_rpc (char* func, ptrdiff_t argc, Lisp_Object *argv)
 {
@@ -553,44 +394,52 @@ Lisp_Object alien_rpc (char* func, ptrdiff_t argc, Lisp_Object *argv)
     {
       argl = Fcons(argv[argi], argl);
     }
-  fwrite_lisp_binary_object(make_fixnum(3), sstream);
+  fwrite_lisp_binary_object(make_int(message_id), sstream);
+  fwrite_lisp_binary_object(make_int(MESSAGE_TYPE_RPC), sstream);
+  fwrite_lisp_binary_object(make_int(3), sstream); // nargs
   fwrite_lisp_binary_object(build_string(func), sstream);
   fwrite_lisp_binary_object(argl, sstream);
   fwrite_lisp_binary_object(context, sstream);
   fclose(sstream);
-  ulong message_length = sbuffer_len;
-  int intercomm_socket = open_intercomm_connection();
-  /* printf("sending message func:%s (message length %ld)\n", func, message_length); */
-  check_socket_operation(send(intercomm_socket, &message_length, sizeof(ulong), 0));
-  ulong message_type = MESSAGE_TYPE_RPC;
-  check_socket_operation(send(intercomm_socket, &message_type, sizeof(ulong), 0));
-  check_socket_operation(send(intercomm_socket, sbuffer, message_length, 0));
+
+  zmq_msg_t out_msg;
+  zmq_check(zmq_msg_init_size(&out_msg, sbuffer_len));
+  memcpy(zmq_msg_data(&out_msg), sbuffer, sbuffer_len);
   free(sbuffer);
-  check_socket_operation(recv(intercomm_socket, &message_length, sizeof(ulong), 0));
-  check_socket_operation(recv(intercomm_socket, &message_type, sizeof(ulong), 0));
-  char *response = malloc(message_length + 1);
-  check_socket_operation(recv(intercomm_socket, response, message_length, 0));
-  response[message_length] = 0;
-  close(intercomm_socket);
-  FILE *stream = fmemopen(response, message_length, "r");
-  Lisp_Object result = fread_lisp_binary_object(stream);
-  
-  free (response);
-  mtx_unlock(&intercomm_mutex);
-  /* printf("type2 %ld\n", XTYPE(result)); */
 #ifdef RPC_DEBUG
+  printf("sending message func:%s (message length %ld)\n", func, sbuffer_len);
+#endif
+  zmq_check(zmq_msg_send(&out_msg, zmq_client, 0));
+  zmq_check(zmq_msg_close(&out_msg));
+#ifdef RPC_DEBUG
+  printf("receiving message\n");
+#endif
+  zmq_msg_t in_msg;
+  zmq_check(zmq_msg_init(&in_msg));
+  zmq_check(zmq_msg_recv(&in_msg, zmq_client, 0));
+  
+  mtx_unlock(&intercomm_mutex);
+#ifdef RPC_DEBUG
+  printf("message size %ld\n", zmq_msg_size(&in_msg));
+#endif
+  FILE *stream = fmemopen(zmq_msg_data(&in_msg), zmq_msg_size(&in_msg), "r");
+  Lisp_Object lmessage_type = fread_lisp_binary_object(stream);
+  Lisp_Object result = fread_lisp_binary_object(stream);
+#ifdef RPC_DEBUG
+  debug_lisp_object("message_type: ", lmessage_type);
   debug_lisp_object("response: ", result);
 #endif
   /* printf("before read\n"); */
   /* printf("after read\n"); */
+  long message_type = XFIXNUM (lmessage_type);
 
-  if (message_type == MESSAGE_TYPE_NOTIFY_S_EXPR)
-    {
-      // do nothing
-    }
-  else if (message_type == MESSAGE_TYPE_SIGNAL)
+  if (message_type == MESSAGE_TYPE_SIGNAL)
     {
       Fsignal(XCAR(result), XCDR(result));
+    }
+  else if (message_type == MESSAGE_TYPE_RPC)
+    {
+      // do nothing
     }
   else
     {
@@ -598,25 +447,8 @@ Lisp_Object alien_rpc (char* func, ptrdiff_t argc, Lisp_Object *argv)
       emacs_abort();
       alien_print_backtrace();
     }
-  /* if (strcmp(func, "elisp/expand-file-name") == 0) */
-  /* { */
-  /*   Lisp_Object orig = Fexpand_file_name(argv[0], argv[1]); */
-  /*   if (NILP(Fstring_equal(orig, result))) { */
-  /*     printf("debug compare rpc:"); */
-  /*     fprint_lisp_object(result, stdout);  */
-  /*     printf(" native:"); */
-  /*     fprint_lisp_object(orig, stdout);  */
-  /*     printf("\n"); */
-  /*     emacs_abort(); */
-  /*   } */
-  /* } */
 
-  /* printf("lisp_string:"); */
-  /* fprint_lisp_object(lisp_string, stdout); */
-  /* printf("\n"); */
-  /* printf("read-from-string:"); */
-  /* fprint_lisp_object(Fread_from_string(lisp_string, Qnil, Qnil), stdout); */
-  /* printf("\n"); */
+  zmq_check(zmq_msg_close(&in_msg));
   return result;
 }
 
@@ -673,6 +505,16 @@ init_alien_intercomm (void)
   printf("sizeof(union vectorlike_header)=%ld\n", sizeof(union vectorlike_header));
   printf("sizeof(Lisp_Object)=%ld\n", sizeof(Lisp_Object));
   mtx_init(&intercomm_mutex, mtx_plain);
+  zmq_context = zmq_ctx_new();
+  printf("zmq initialized\n");
+  char intercomm_addr[] = "tcp://127.0.0.1:7447";
+  zmq_client = zmq_socket(zmq_context, ZMQ_REQ);
+  if (!zmq_client)
+  {
+    intercomm_die("can't create socket");
+  }
+  zmq_check(zmq_connect(zmq_client, intercomm_addr));
+
   defsubr (&Scommon_lisp_apply);
   defsubr (&Scommon_lisp_init);
   DEFSYM (Qalien_var, "alien-var");

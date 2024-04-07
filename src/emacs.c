@@ -1891,6 +1891,8 @@ Using an Emacs configured with --with-x-toolkit=lucid does not have this problem
       init_obarray_once ();
       init_eval_once ();
   init_alien_injection ();
+  init_alien_intercomm ();
+
   /* Lisp_Object ad[] = {build_string("test %s %d"), build_string("data"), make_fixnum(3)}; */
   /* Lisp_Object test = styled_format1n(Qnil, 3, ad); */
   /* printf("test: %s\n", SDATA(test)); */
@@ -2479,7 +2481,6 @@ Using an Emacs configured with --with-x-toolkit=lucid does not have this problem
   init_font ();
 
   syms_of_eval ();
-  init_alien_intercomm ();
 
   if (!initialized)
     {
