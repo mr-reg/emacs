@@ -3020,7 +3020,7 @@ funcall_subr (struct Lisp_Subr *subr, ptrdiff_t numargs, Lisp_Object *args)
   /* printf("funcall_subr %s ", subr->symbol_name); */
   /* for (int argi = 0; argi < numargs; argi++ ) */
   /*   { */
-  /*     fprint_lisp_object(args[argi], stdout); */
+  /*     fprint_lisp_object(args[argi], stdout, 1); */
   /*     printf(" "); */
   /*   } */
   /* printf("\n"); */

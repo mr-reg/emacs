@@ -6307,7 +6307,7 @@ garbage_collect (void)
       Vgc_elapsed = make_float (timespectod (gc_elapsed));
     }
 
-  gcs_done++;
+  Fincf(gcs_done);
 
   /* Collect profiling data.  */
   if (tot_before != (byte_ct) -1)
@@ -7890,8 +7890,10 @@ do hash-consing of the objects allocated to pure space.  */);
   DEFVAR_LISP ("gc-elapsed", Vgc_elapsed,
 	       doc: /* Accumulated time elapsed in garbage collections.
 The time is in seconds as a floating point value.  */);
-  DEFVAR_INT ("gcs-done", gcs_done,
+
+  DEFVAR_LISP ("gcs-done", gcs_done,
               doc: /* Accumulated number of garbage collections done.  */);
+  gcs_done = Fmake_alien_var(build_string("gcs-done"), make_int(0));
 
   DEFVAR_INT ("integer-width", integer_width,
 	      doc: /* Maximum number N of bits in safely-calculated integers.

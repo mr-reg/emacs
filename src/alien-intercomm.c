@@ -25,7 +25,7 @@
 #define MESSAGE_TYPE_SIGNAL 2
 #define MESSAGE_TYPE_RPC 3
 
-#define RPC_DEBUG 1
+#define RPC_DEBUG
 
 int ALIENP(Lisp_Object obj)
 {
@@ -67,7 +67,7 @@ void alien_print_backtrace (void)
   printf("%s\n", get_alien_backtrace());
 }
 
-static void intercomm_die (char* message)
+static void intercomm_die (const char* message)
 {
   printf("DIE %s\n", message);
   mtx_unlock(&intercomm_mutex);
@@ -372,56 +372,67 @@ Lisp_Object alien_rpc (char* func, ptrdiff_t argc, Lisp_Object *argv)
     alien_print_backtrace();
     emacs_abort();
   }
-  message_id ++;
-#ifdef RPC_DEBUG
-  printf ("rpc[%ld] locked %s\n", message_id, func);
-#endif
-
-  char *sbuffer;
-  size_t sbuffer_len;
-  FILE *sstream = open_memstream(&sbuffer, &sbuffer_len);
-
-  Lisp_Object context = Qnil;
-  context = Fcons(intern(":message-id"), Fcons(make_fixnum(message_id), context));
-  context = Fcons(intern(":invocation-directory"), Fcons(Vinvocation_directory, context));
-  context = Fcons(intern(":home"), Fcons(Fgetenv_internal(build_string("HOME"), Qnil), context));
-  if (current_buffer)
-  {
-    context = Fcons(intern(":buffer-default-directory"), Fcons(BVAR (current_buffer, directory), context));
-  }
-  Lisp_Object argl = Qnil;
-  for (int argi = argc - 1; argi >= 0; argi--)
-    {
-      argl = Fcons(argv[argi], argl);
-    }
-  fwrite_lisp_binary_object(make_int(message_id), sstream);
-  fwrite_lisp_binary_object(make_int(MESSAGE_TYPE_RPC), sstream);
-  fwrite_lisp_binary_object(make_int(3), sstream); // nargs
-  fwrite_lisp_binary_object(build_string(func), sstream);
-  fwrite_lisp_binary_object(argl, sstream);
-  fwrite_lisp_binary_object(context, sstream);
-  fclose(sstream);
-
-  zmq_msg_t out_msg;
-  zmq_check(zmq_msg_init_size(&out_msg, sbuffer_len));
-  memcpy(zmq_msg_data(&out_msg), sbuffer, sbuffer_len);
-  free(sbuffer);
-#ifdef RPC_DEBUG
-  printf("sending message func:%s (message length %ld)\n", func, sbuffer_len);
-#endif
-  zmq_check(zmq_msg_send(&out_msg, zmq_client, 0));
-  zmq_check(zmq_msg_close(&out_msg));
-#ifdef RPC_DEBUG
-  printf("receiving message\n");
-#endif
+  int retry = 1;
+  int nretry = 3;
   zmq_msg_t in_msg;
-  zmq_check(zmq_msg_init(&in_msg));
-  zmq_check(zmq_msg_recv(&in_msg, zmq_client, 0));
-  
-  mtx_unlock(&intercomm_mutex);
+  while (retry) {
+    retry = 0;
+    message_id ++;
 #ifdef RPC_DEBUG
-  printf("message size %ld\n", zmq_msg_size(&in_msg));
+    printf ("rpc[%ld] locked %s\n", message_id, func);
 #endif
+
+    char *sbuffer;
+    size_t sbuffer_len;
+    FILE *sstream = open_memstream(&sbuffer, &sbuffer_len);
+
+    Lisp_Object context = Qnil;
+    context = Fcons(intern(":message-id"), Fcons(make_fixnum(message_id), context));
+    context = Fcons(intern(":invocation-directory"), Fcons(Vinvocation_directory, context));
+    context = Fcons(intern(":home"), Fcons(Fgetenv_internal(build_string("HOME"), Qnil), context));
+    if (current_buffer)
+      {
+	context = Fcons(intern(":buffer-default-directory"), Fcons(BVAR (current_buffer, directory), context));
+      }
+    Lisp_Object argl = Qnil;
+    for (int argi = argc - 1; argi >= 0; argi--)
+      {
+	argl = Fcons(argv[argi], argl);
+      }
+    fwrite_lisp_binary_object(make_int(message_id), sstream);
+    fwrite_lisp_binary_object(make_int(MESSAGE_TYPE_RPC), sstream);
+    fwrite_lisp_binary_object(make_int(3), sstream); // nargs
+    fwrite_lisp_binary_object(build_string(func), sstream);
+    fwrite_lisp_binary_object(argl, sstream);
+    fwrite_lisp_binary_object(context, sstream);
+    fclose(sstream);
+
+    zmq_msg_t out_msg;
+    zmq_check(zmq_msg_init_size(&out_msg, sbuffer_len));
+    memcpy(zmq_msg_data(&out_msg), sbuffer, sbuffer_len);
+    free(sbuffer);
+#ifdef RPC_DEBUG
+    printf("sending message func:%s (message length %ld)\n", func, sbuffer_len);
+#endif
+    zmq_check(zmq_msg_send(&out_msg, zmq_client, 0));
+    zmq_check(zmq_msg_close(&out_msg));
+#ifdef RPC_DEBUG
+    printf("receiving message\n");
+#endif
+    zmq_check(zmq_msg_init(&in_msg));
+    zmq_check(zmq_msg_recv(&in_msg, zmq_client, 0));
+    long msg_size = zmq_msg_size(&in_msg);
+#ifdef RPC_DEBUG
+    printf("message size %ld\n", msg_size);
+#endif
+    if (msg_size == 0 && nretry > 0) {
+      printf ("retrying %d\n", nretry);
+      zmq_check(zmq_msg_close(&in_msg));
+      retry = 1;
+      nretry --;
+    }
+  }
+  mtx_unlock(&intercomm_mutex);
   FILE *stream = fmemopen(zmq_msg_data(&in_msg), zmq_msg_size(&in_msg), "r");
   Lisp_Object lmessage_type = fread_lisp_binary_object(stream);
   Lisp_Object result = fread_lisp_binary_object(stream);
