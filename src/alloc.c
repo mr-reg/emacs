@@ -107,6 +107,8 @@ along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 #include "w32.h"
 #include "w32heap.h"	/* for sbrk */
 #endif
+#include "alien-injection.h"
+#include "alien-intercomm.h"
 
 /* A type with alignment at least as large as any object that Emacs
    allocates.  This is not max_align_t because some platforms (e.g.,
@@ -6197,6 +6199,7 @@ garbage_collect (void)
 
   struct gc_root_visitor visitor = { .visit = mark_object_root_visitor };
   visit_static_gc_roots (visitor);
+  visit_alien_roots (visitor);
 
   mark_pinned_objects ();
   mark_pinned_symbols ();
@@ -6307,7 +6310,8 @@ garbage_collect (void)
       Vgc_elapsed = make_float (timespectod (gc_elapsed));
     }
 
-  Fincf(gcs_done);
+  debug_lisp_object("gcs_done before incf", Agcs_done);
+  Fincrement(Agcs_done);
 
   /* Collect profiling data.  */
   if (tot_before != (byte_ct) -1)
@@ -7781,7 +7785,7 @@ void
 init_alloc (void)
 {
   Vgc_elapsed = make_float (0.0);
-  gcs_done = 0;
+  Fset(Agcs_done, make_int(0));
 }
 
 void
@@ -7890,10 +7894,6 @@ do hash-consing of the objects allocated to pure space.  */);
   DEFVAR_LISP ("gc-elapsed", Vgc_elapsed,
 	       doc: /* Accumulated time elapsed in garbage collections.
 The time is in seconds as a floating point value.  */);
-
-  DEFVAR_LISP ("gcs-done", gcs_done,
-              doc: /* Accumulated number of garbage collections done.  */);
-  gcs_done = Fmake_alien_var(build_string("gcs-done"), make_int(0));
 
   DEFVAR_INT ("integer-width", integer_width,
 	      doc: /* Maximum number N of bits in safely-calculated integers.

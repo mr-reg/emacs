@@ -7,6 +7,7 @@
 
 void alien_print_backtrace (void);
 void init_alien_intercomm (void);
+/* void visit_alien_roots (struct gc_root_visitor visitor); */
 
 Lisp_Object alien_rpc (char* func, ptrdiff_t argc, Lisp_Object *argv);
 Lisp_Object alien_rpc0(const char* func);

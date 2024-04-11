@@ -362,6 +362,7 @@ void debug_lisp_object (const char* message, Lisp_Object obj)
 
 Lisp_Object alien_rpc (char* func, ptrdiff_t argc, Lisp_Object *argv)
 {
+  /* debug_lisp_object("debug", Agcs_done); */
 #ifdef RPC_DEBUG
   printf("rpc %s\n", func);
 #endif
@@ -509,6 +510,11 @@ DEFUN ("common-lisp-init", Fcommon_lisp_init, Scommon_lisp_init, 0, 0, 0,
 /*   return make_alien (name, strlen(name)); */
 /* } */
 
+/* void */
+/* visit_alien_roots (struct gc_root_visitor visitor) */
+/* { */
+/*   visitor.visit(&Agcs_done, GC_ROOT_C_SYMBOL, visitor.data); */
+/* } */
 
 void
 init_alien_intercomm (void)
@@ -525,11 +531,11 @@ init_alien_intercomm (void)
     intercomm_die("can't create socket");
   }
   zmq_check(zmq_connect(zmq_client, intercomm_addr));
-
+  Finit_globals();
   defsubr (&Scommon_lisp_apply);
   defsubr (&Scommon_lisp_init);
   DEFSYM (Qalien_var, "alien-var");
-
+  /* defvar_lisp_nopro (Agcs_done, "gcs-done"); */
   /* Lisp_Object test = Fmake_alien_var(build_string("test")); */
   /* Fset(test, make_fixnum(34)); */
 
