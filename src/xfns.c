@@ -39,6 +39,7 @@ along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 
 #include <sys/types.h>
 #include <sys/stat.h>
+#include "alien-injection.h"
 
 #ifdef USE_XCB
 #include <xcb/xcb.h>
@@ -107,7 +108,6 @@ along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 #ifdef USE_LUCID
 #include "../lwlib/xlwmenu.h"
 #endif
-
 /* Unique id counter for widgets created by the Lucid Widget Library.  */
 
 extern LWLIB_ID widget_id_tick;
@@ -10169,14 +10169,12 @@ eliminated in future versions of Emacs.  */);
 #ifdef USE_CAIRO
   Fprovide (intern_c_string ("cairo"), Qnil);
 
-  DEFVAR_LISP ("cairo-version-string", Vcairo_version_string,
-               doc: /* Version info for cairo.  */);
   {
     char cairo_version[sizeof ".." + 3 * INT_STRLEN_BOUND (int)];
     int len = sprintf (cairo_version, "%d.%d.%d",
 		       CAIRO_VERSION_MAJOR, CAIRO_VERSION_MINOR,
                        CAIRO_VERSION_MICRO);
-    Vcairo_version_string = make_pure_string (cairo_version, len, len, false);
+    Fset(Acairo_version_string, make_pure_string (cairo_version, len, len, false));
   }
 #endif
 

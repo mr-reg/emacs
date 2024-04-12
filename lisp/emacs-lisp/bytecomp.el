@@ -1976,7 +1976,7 @@ also be compiled."
 	       (if (> dir-count 1)
                    (format " in %d directories" dir-count) "")))))
 
-(defvar no-byte-compile nil
+(defvar no-byte-compile t
   "Non-nil to prevent byte-compiling of Emacs Lisp code.
 This is normally set in local file variables at the end of the elisp file:
 

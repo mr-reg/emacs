@@ -6310,7 +6310,6 @@ garbage_collect (void)
       Vgc_elapsed = make_float (timespectod (gc_elapsed));
     }
 
-  debug_lisp_object("gcs_done before incf", Agcs_done);
   Fincrement(Agcs_done);
 
   /* Collect profiling data.  */

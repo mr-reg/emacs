@@ -1,3 +1,4 @@
+garbage
 /* Functions for the pure Gtk+-3.
 
 Copyright (C) 1989, 1992-1994, 2005-2006, 2008-2020, 2022-2023 Free

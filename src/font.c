@@ -39,7 +39,7 @@ along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 #include "font.h"
 #include "termhooks.h"
 #include "pdumper.h"
-
+#include "alien-injection.h"
 #ifdef HAVE_WINDOW_SYSTEM
 #include TERM_HEADER
 #endif /* HAVE_WINDOW_SYSTEM */
@@ -449,6 +449,7 @@ find_font_encoding (Lisp_Object fontname)
   Lisp_Object tail, elt;
 
   for (tail = Vfont_encoding_alist; CONSP (tail); tail = XCDR (tail))
+  /* for (tail = Ffind_symbol_value(Afont_encoding_alist); CONSP (tail); tail = XCDR (tail)) */
     {
       elt = XCAR (tail);
       if (CONSP (elt)

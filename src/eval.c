@@ -2390,7 +2390,7 @@ grow_specpdl_allocation (void)
 Lisp_Object
 eval_sub (Lisp_Object form)
 {
-  /* debug_lisp_object("eval_sub ", &form); */
+  /* debug_lisp_object("eval_sub ", form); */
   if (SYMBOLP (form))
     {
       /* Look up its binding in the lexical environment.

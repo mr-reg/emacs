@@ -25,7 +25,7 @@
 #define MESSAGE_TYPE_SIGNAL 2
 #define MESSAGE_TYPE_RPC 3
 
-#define RPC_DEBUG
+/* #define RPC_DEBUG */
 
 int ALIENP(Lisp_Object obj)
 {

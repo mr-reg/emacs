@@ -1,3 +1,4 @@
+garbage
 /* Haiku window system support
    Copyright (C) 2021-2023 Free Software Foundation, Inc.
 

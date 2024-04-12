@@ -37,7 +37,7 @@ along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 #include "process.h"
 #include "frame.h"
 #include "keymap.h"
-
+#include "alien-intercomm.h"
 static void swap_in_symval_forwarding (struct Lisp_Symbol *,
 				       struct Lisp_Buffer_Local_Value *);
 
@@ -1312,6 +1312,9 @@ do_symval_forwarding (lispfwd valcontents)
     case Lisp_Fwd_Obj:
       return *XOBJFWD (valcontents)->objvar;
 
+    case Lisp_Fwd_Alien:
+      return Ffind_symbol_value(*XOBJFWD (valcontents)->objvar);
+
     case Lisp_Fwd_Buffer_Obj:
       return per_buffer_value (current_buffer,
 			       XBUFFER_OBJFWD (valcontents)->offset);
@@ -1571,6 +1574,7 @@ find_symbol_value (Lisp_Object symbol)
 
   CHECK_SYMBOL (symbol);
   sym = XSYMBOL (symbol);
+  /* debug_lisp_object("find_symbol_value", symbol); */
 
  start:
   switch (sym->u.s.redirect)
@@ -1627,6 +1631,8 @@ void
 set_internal (Lisp_Object symbol, Lisp_Object newval, Lisp_Object where,
               enum Set_Internal_Bind bindflag)
 {
+  /* debug_lisp_object("set_internal", symbol); */
+  /* fflush(stdout); */
   if (ALIENP(symbol))
     {
       printf("alien set_internal\n");

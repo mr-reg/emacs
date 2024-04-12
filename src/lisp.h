@@ -547,7 +547,8 @@ enum Lisp_Fwd_Type
     Lisp_Fwd_Bool,		/* Fwd to a C boolean var.  */
     Lisp_Fwd_Obj,		/* Fwd to a C Lisp_Object variable.  */
     Lisp_Fwd_Buffer_Obj,	/* Fwd to a Lisp_Object field of buffers.  */
-    Lisp_Fwd_Kboard_Obj		/* Fwd to a Lisp_Object field of kboards.  */
+    Lisp_Fwd_Kboard_Obj,		/* Fwd to a Lisp_Object field of kboards.  */
+    Lisp_Fwd_Alien
   };
 
 /* If you want to define a new Lisp data type, here are some
