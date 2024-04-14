@@ -1313,7 +1313,7 @@ do_symval_forwarding (lispfwd valcontents)
       return *XOBJFWD (valcontents)->objvar;
 
     case Lisp_Fwd_Alien:
-      return Ffind_symbol_value(*XOBJFWD (valcontents)->objvar);
+      return Ffind_alien_symbol_value(*XOBJFWD (valcontents)->objvar);
 
     case Lisp_Fwd_Buffer_Obj:
       return per_buffer_value (current_buffer,
@@ -1601,6 +1601,7 @@ Note that if `lexical-binding' is in effect, this returns the
 global value outside of any lexical scope.  */)
   (Lisp_Object symbol)
 {
+  symbol = add_alien_forward_if_required(symbol);
   Lisp_Object val;
 
   val = find_symbol_value (symbol);
@@ -1633,12 +1634,13 @@ set_internal (Lisp_Object symbol, Lisp_Object newval, Lisp_Object where,
 {
   /* debug_lisp_object("set_internal", symbol); */
   /* fflush(stdout); */
-  if (ALIENP(symbol))
-    {
-      printf("alien set_internal\n");
-      Falien_set_internal(symbol, newval, where, make_fixnum(bindflag));
-      return;
-    }
+  symbol = add_alien_forward_if_required(symbol);
+  /* if (ALIENP(symbol)) */
+  /*   { */
+  /*     printf("alien set_internal\n"); */
+  /*     Falien_set_internal(symbol, newval, where, make_fixnum(bindflag)); */
+  /*     return; */
+  /*   } */
   /* debug_lisp_object("newval ", newval); */
   /* Fset_internal(symbol, newval, Qnil, make_fixnum(0)); */
   bool voide = BASE_EQ (newval, Qunbound);

@@ -2175,8 +2175,10 @@ current buffer state and calls REPORT-FN when done."
                  ((not (and (buffer-live-p source-buffer)
                             (eq proc (with-current-buffer source-buffer
                                        elisp-flymake--byte-compile-process))))
-                  (flymake-log :warning
-                               "byte-compile process %s obsolete" proc))
+                  ;; something is fishy here
+                  ;; (flymake-log :warning
+                  ;;              "byte-compile process %s obsolete" proc)
+                  )
                  ((zerop (process-exit-status proc))
                   (elisp-flymake--byte-compile-done report-fn
                                                     source-buffer
@@ -2189,7 +2191,8 @@ current buffer state and calls REPORT-FN when done."
               (ignore-errors (delete-file temp-file))
               (kill-buffer output-buffer))))
         :stderr " *stderr of elisp-flymake-byte-compile*"
-        :noquery t)))))
+        :noquery t))))
+  )
 
 (defun elisp-flymake--batch-compile-for-flymake (&optional file)
   "Helper for `elisp-flymake-byte-compile'.

@@ -25,11 +25,35 @@
 #define MESSAGE_TYPE_SIGNAL 2
 #define MESSAGE_TYPE_RPC 3
 
-/* #define RPC_DEBUG */
+#define RPC_DEBUG
 
-int ALIENP(Lisp_Object obj)
+void add_alien_forward (Lisp_Object sym, Lisp_Object alien_symbol)
 {
-  return CONSP(obj) && EQ(XCAR(obj), Qalien_var);
+  struct Lisp_Objfwd const o_fwd = {Lisp_Fwd_Alien, &alien_symbol};
+  /* XSYMBOL (sym)->u.s.declared_special = true; */
+  XSYMBOL (sym)->u.s.redirect = SYMBOL_FORWARDED;
+  SET_SYMBOL_FWD (XSYMBOL (sym), &o_fwd);
+}
+
+Lisp_Object add_alien_forward_if_required(Lisp_Object var)
+{
+  struct Lisp_Symbol *sym = XSYMBOL (var);
+  if (sym->u.s.redirect == SYMBOL_FORWARDED && 
+      ((struct Lisp_Objfwd *)sym->u.s.val.fwd.fwdptr)->type == Lisp_Fwd_Alien)
+    {
+      debug_lisp_object ("already alien", var);
+      return var;
+    }
+  Lisp_Object boundp = Falien_boundp(var);
+  if (NILP(boundp)) {
+    debug_lisp_object ("not alien", var);
+    return var;
+  } else
+  {
+    debug_lisp_object ("now alien", var);
+    add_alien_forward (var, var);
+    return var;
+  }
 }
 
 void *zmq_context;
@@ -130,17 +154,10 @@ void fwrite_lisp_binary_object(Lisp_Object obj, FILE *stream) {
     break;
     case Lisp_Cons:
     {
-      if (ALIENP(obj))
-	  {
-	    fwrite_lisp_binary_object (XCDR (obj), stream);
-	  }
-      else
-	  {
-	    type = 'C';
-	    fwrite (&type, 1, 1, stream);
-	    fwrite_lisp_binary_object (XCAR (obj), stream);
-	    fwrite_lisp_binary_object (XCDR (obj), stream);
-	  }
+      type = 'C';
+      fwrite (&type, 1, 1, stream);
+      fwrite_lisp_binary_object (XCAR (obj), stream);
+      fwrite_lisp_binary_object (XCDR (obj), stream);
     }
     break;
     case Lisp_Vectorlike:
@@ -244,12 +261,12 @@ Lisp_Object fread_lisp_binary_object(FILE *stream) {
 	result = Fcons(car, cdr);
       }
       break;
-    case 'L':
-      {
-	Lisp_Object cdr = fread_lisp_binary_object(stream);
-	result = Fcons(Qalien_var, cdr);
-      }
-      break;
+    /* case 'L': */
+    /*   { */
+    /* 	Lisp_Object cdr = fread_lisp_binary_object(stream); */
+    /* 	result = Fcons(Qalien_var, cdr); */
+    /*   } */
+    /*   break; */
     case 'V':
       {
 	printf("read_binary: unsupported vector\n");
@@ -364,7 +381,7 @@ Lisp_Object alien_rpc (char* func, ptrdiff_t argc, Lisp_Object *argv)
 {
   /* debug_lisp_object("debug", Agcs_done); */
 #ifdef RPC_DEBUG
-  printf("rpc %s\n", func);
+  printf("RPC_DEBUG %s\n", func);
 #endif
   int lock_status = mtx_trylock(&intercomm_mutex);
   if (lock_status != 0)
@@ -380,7 +397,7 @@ Lisp_Object alien_rpc (char* func, ptrdiff_t argc, Lisp_Object *argv)
     retry = 0;
     message_id ++;
 #ifdef RPC_DEBUG
-    printf ("rpc[%ld] locked %s\n", message_id, func);
+    printf ("RPC_DEBUG[%ld] locked %s\n", message_id, func);
 #endif
 
     char *sbuffer;
@@ -413,18 +430,18 @@ Lisp_Object alien_rpc (char* func, ptrdiff_t argc, Lisp_Object *argv)
     memcpy(zmq_msg_data(&out_msg), sbuffer, sbuffer_len);
     free(sbuffer);
 #ifdef RPC_DEBUG
-    printf("sending message func:%s (message length %ld)\n", func, sbuffer_len);
+    printf("RPC_DEBUG sending message func:%s (message length %ld)\n", func, sbuffer_len);
 #endif
     zmq_check(zmq_msg_send(&out_msg, zmq_client, 0));
     zmq_check(zmq_msg_close(&out_msg));
 #ifdef RPC_DEBUG
-    printf("receiving message\n");
+    printf("RPC_DEBUG receiving message\n");
 #endif
     zmq_check(zmq_msg_init(&in_msg));
     zmq_check(zmq_msg_recv(&in_msg, zmq_client, 0));
     long msg_size = zmq_msg_size(&in_msg);
 #ifdef RPC_DEBUG
-    printf("message size %ld\n", msg_size);
+    printf("RPC_DEBUG message size %ld\n", msg_size);
 #endif
     if (msg_size == 0 && nretry > 0) {
       printf ("retrying %d\n", nretry);
@@ -438,8 +455,8 @@ Lisp_Object alien_rpc (char* func, ptrdiff_t argc, Lisp_Object *argv)
   Lisp_Object lmessage_type = fread_lisp_binary_object(stream);
   Lisp_Object result = fread_lisp_binary_object(stream);
 #ifdef RPC_DEBUG
-  debug_lisp_object("message_type: ", lmessage_type);
-  debug_lisp_object("response: ", result);
+  debug_lisp_object("RPC_DEBUG message_type: ", lmessage_type);
+  debug_lisp_object("RPC_DEBUG response: ", result);
 #endif
   /* printf("before read\n"); */
   /* printf("after read\n"); */
@@ -534,12 +551,17 @@ init_alien_intercomm (void)
   Finit_globals();
   defsubr (&Scommon_lisp_apply);
   defsubr (&Scommon_lisp_init);
-  DEFSYM (Qalien_var, "alien-var");
-  /* defvar_lisp_nopro (Agcs_done, "gcs-done"); */
-  /* Lisp_Object test = Fmake_alien_var(build_string("test")); */
-  /* Fset(test, make_fixnum(34)); */
-
+  /* DEFSYM (Qalien_var, "alien-var"); */
+  
+  /* Lisp_Object n = intern("nil"); */
+  /* printf("test %d\n", NILP(n)); */
   /* exit(0); */
+
+  Lisp_Object test = intern("test1");
+  Fset(test, make_fixnum(34));
+  /* Fincrement(test); */
+  debug_lisp_object("result ", Fsymbol_value(test));
+  exit(0);
   /* if (ALIEN_INTERCOMM_ENABLED)  */
   /* { */
   /*   Fcommon_lisp_init(); */

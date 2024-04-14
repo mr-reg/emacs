@@ -6310,7 +6310,7 @@ garbage_collect (void)
       Vgc_elapsed = make_float (timespectod (gc_elapsed));
     }
 
-  Fincrement(Agcs_done);
+  Falien_increment(Agcs_done);
 
   /* Collect profiling data.  */
   if (tot_before != (byte_ct) -1)
