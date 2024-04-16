@@ -25,8 +25,8 @@
 #define MESSAGE_TYPE_SIGNAL 2
 #define MESSAGE_TYPE_RPC 3
 
-#define RPC_DEBUG
-
+/* #define RPC_DEBUG */
+/* #define ALIEN_VAR_DEBUG */
 void add_alien_forward (Lisp_Object sym, Lisp_Object alien_symbol)
 {
   struct Lisp_Objfwd const o_fwd = {Lisp_Fwd_Alien, &alien_symbol};
@@ -35,26 +35,70 @@ void add_alien_forward (Lisp_Object sym, Lisp_Object alien_symbol)
   SET_SYMBOL_FWD (XSYMBOL (sym), &o_fwd);
 }
 
-Lisp_Object add_alien_forward_if_required(Lisp_Object var)
+#define ALIEN_VAR_CACHE_SIZE 1000
+unsigned char alien_var_cache[ALIEN_VAR_CACHE_SIZE] = { 0 };
+
+Lisp_Object
+add_alien_forward_if_required (Lisp_Object var)
 {
-  struct Lisp_Symbol *sym = XSYMBOL (var);
-  if (sym->u.s.redirect == SYMBOL_FORWARDED && 
-      ((struct Lisp_Objfwd *)sym->u.s.val.fwd.fwdptr)->type == Lisp_Fwd_Alien)
+  /* struct Lisp_Symbol *sym = XSYMBOL (var); */
+  if (ALIENP(var))
     {
+#ifdef ALIEN_VAR_DEBUG
       debug_lisp_object ("already alien", var);
+#endif
       return var;
     }
-  Lisp_Object boundp = Falien_boundp(var);
+  unsigned id = XSYMBOL (var)->u.s.interned;
+  if (id >= ALIEN_VAR_CACHE_SIZE)
+    {
+      printf("id too big: sym %s id %ld\n", SSDATA (SYMBOL_NAME (var)), SBYTES (SYMBOL_NAME (var)), id);
+      emacs_abort();
+    }
+  Lisp_Object boundp = Qnil;
+  if (alien_var_cache[id] == 0)
+    {
+      boundp = Falien_boundp (make_string (SSDATA (SYMBOL_NAME (var)), SBYTES (SYMBOL_NAME (var))));
+#ifdef ALIEN_VAR_DEBUG
+      printf("storing cache: sym %s id %ld\n", SSDATA (SYMBOL_NAME (var)), SBYTES (SYMBOL_NAME (var)), id);
+#endif
+      if (NILP(boundp))
+	{
+	  alien_var_cache[id] = 2;
+	}
+      else
+	{
+	  alien_var_cache[id] = 1; //bound
+	}
+    }
+  else if (alien_var_cache[id] == 1)
+    {
+      boundp = Qt;
+    }
+  else if (alien_var_cache[id] == 2)
+    {
+      boundp = Qnil;
+    }
+  else
+    {
+      printf("unknown value\n");
+      emacs_abort();
+    }
   if (NILP(boundp)) {
+#ifdef ALIEN_VAR_DEBUG
     debug_lisp_object ("not alien", var);
+#endif
     return var;
   } else
   {
+#ifdef ALIEN_VAR_DEBUG
     debug_lisp_object ("now alien", var);
+#endif
     add_alien_forward (var, var);
     return var;
   }
 }
+
 
 void *zmq_context;
 void* zmq_client;
@@ -374,12 +418,17 @@ void debug_lisp_object (const char* message, Lisp_Object obj)
   printf("%s ", message);
   fprint_lisp_object(obj, stdout, 1);
   printf("\n");
+  fflush(stdout);
 }
 
 
 Lisp_Object alien_rpc (char* func, ptrdiff_t argc, Lisp_Object *argv)
 {
   /* debug_lisp_object("debug", Agcs_done); */
+  /* if (strcmp("cl-emacs/elisp:alien-set-internal", func) == 0) */
+  /*   { */
+  /*   alien_print_backtrace(); */
+  /*   } */
 #ifdef RPC_DEBUG
   printf("RPC_DEBUG %s\n", func);
 #endif
@@ -557,11 +606,11 @@ init_alien_intercomm (void)
   /* printf("test %d\n", NILP(n)); */
   /* exit(0); */
 
-  Lisp_Object test = intern("test1");
-  Fset(test, make_fixnum(34));
-  /* Fincrement(test); */
-  debug_lisp_object("result ", Fsymbol_value(test));
-  exit(0);
+  /* Lisp_Object test = intern("test1"); */
+  /* Fset(test, make_fixnum(34)); */
+  /* /\* Fincrement(test); *\/ */
+  /* debug_lisp_object("result ", Fsymbol_value(test)); */
+  /* exit(0); */
   /* if (ALIEN_INTERCOMM_ENABLED)  */
   /* { */
   /*   Fcommon_lisp_init(); */

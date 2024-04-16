@@ -1486,6 +1486,7 @@ store_symval_forwarding (lispfwd valcontents, Lisp_Object newval,
       }
       break;
 
+
     default:
       emacs_abort (); /* goto def; */
     }
@@ -1635,12 +1636,11 @@ set_internal (Lisp_Object symbol, Lisp_Object newval, Lisp_Object where,
   /* debug_lisp_object("set_internal", symbol); */
   /* fflush(stdout); */
   symbol = add_alien_forward_if_required(symbol);
-  /* if (ALIENP(symbol)) */
-  /*   { */
-  /*     printf("alien set_internal\n"); */
-  /*     Falien_set_internal(symbol, newval, where, make_fixnum(bindflag)); */
-  /*     return; */
-  /*   } */
+  if (ALIENP(symbol))
+    {
+      Falien_set_internal(symbol, newval, where, make_fixnum(bindflag));
+      return;
+    }
   /* debug_lisp_object("newval ", newval); */
   /* Fset_internal(symbol, newval, Qnil, make_fixnum(0)); */
   bool voide = BASE_EQ (newval, Qunbound);

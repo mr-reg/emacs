@@ -4,6 +4,7 @@
 # include "lisp.h"
 
 #define ALIEN_INTERCOMM_ENABLED 1
+#define ALIENP(v) (XSYMBOL(v)->u.s.redirect == SYMBOL_FORWARDED && ((struct Lisp_Objfwd *)XSYMBOL(v)->u.s.val.fwd.fwdptr)->type == Lisp_Fwd_Alien)
 
 void alien_print_backtrace (void);
 void init_alien_intercomm (void);
