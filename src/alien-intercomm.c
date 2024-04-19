@@ -15,6 +15,7 @@
 #include <threads.h>
 #include "lisp.h"
 #include <zmq.h>
+#include <sys/resource.h>
 
 
 #define ALIEN_BACKTRACE_LIMIT 500
@@ -600,6 +601,12 @@ init_alien_intercomm (void)
   Finit_globals();
   defsubr (&Scommon_lisp_apply);
   defsubr (&Scommon_lisp_init);
+
+  /* const rlim_t kStackSize = 100 * 1000 * 1024;   // min stack size = 16 MB */
+  /* struct rlimit rl; */
+  /* int result; */
+  /* result = setrlimit(RLIMIT_STACK, &rl); */
+  /* printf("stack result %d\n", result); */
   /* DEFSYM (Qalien_var, "alien-var"); */
   
   /* Lisp_Object n = intern("nil"); */

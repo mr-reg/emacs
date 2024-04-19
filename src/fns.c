@@ -5155,61 +5155,61 @@ sxhash_obj (Lisp_Object obj, int depth)
 			    Lisp Interface
  ***********************************************************************/
 
-DEFUN ("sxhash-eq", Fsxhash_eq, Ssxhash_eq, 1, 1, 0,
-       doc: /* Return an integer hash code for OBJ suitable for `eq'.
-If (eq A B), then (= (sxhash-eq A) (sxhash-eq B)).
+/* DEFUN ("sxhash-eq", Fsxhash_eq, Ssxhash_eq, 1, 1, 0, */
+/*        doc: /\* Return an integer hash code for OBJ suitable for `eq'. */
+/* If (eq A B), then (= (sxhash-eq A) (sxhash-eq B)). */
 
-Hash codes are not guaranteed to be preserved across Emacs sessions.  */)
-  (Lisp_Object obj)
-{
-  return hashfn_eq (obj, NULL);
-}
+/* Hash codes are not guaranteed to be preserved across Emacs sessions.  *\/) */
+/*   (Lisp_Object obj) */
+/* { */
+/*   return hashfn_eq (obj, NULL); */
+/* } */
 
-DEFUN ("sxhash-eql", Fsxhash_eql, Ssxhash_eql, 1, 1, 0,
-       doc: /* Return an integer hash code for OBJ suitable for `eql'.
-If (eql A B), then (= (sxhash-eql A) (sxhash-eql B)), but the opposite
-isn't necessarily true.
+/* DEFUN ("sxhash-eql", Fsxhash_eql, Ssxhash_eql, 1, 1, 0, */
+/*        doc: /\* Return an integer hash code for OBJ suitable for `eql'. */
+/* If (eql A B), then (= (sxhash-eql A) (sxhash-eql B)), but the opposite */
+/* isn't necessarily true. */
 
-Hash codes are not guaranteed to be preserved across Emacs sessions.  */)
-  (Lisp_Object obj)
-{
-  return hashfn_eql (obj, NULL);
-}
+/* Hash codes are not guaranteed to be preserved across Emacs sessions.  *\/) */
+/*   (Lisp_Object obj) */
+/* { */
+/*   return hashfn_eql (obj, NULL); */
+/* } */
 
-DEFUN ("sxhash-equal", Fsxhash_equal, Ssxhash_equal, 1, 1, 0,
-       doc: /* Return an integer hash code for OBJ suitable for `equal'.
-If (equal A B), then (= (sxhash-equal A) (sxhash-equal B)), but the
-opposite isn't necessarily true.
+/* DEFUN ("sxhash-equal", Fsxhash_equal, Ssxhash_equal, 1, 1, 0, */
+/*        doc: /\* Return an integer hash code for OBJ suitable for `equal'. */
+/* If (equal A B), then (= (sxhash-equal A) (sxhash-equal B)), but the */
+/* opposite isn't necessarily true. */
 
-Hash codes are not guaranteed to be preserved across Emacs sessions.  */)
-  (Lisp_Object obj)
-{
-  return hashfn_equal (obj, NULL);
-}
+/* Hash codes are not guaranteed to be preserved across Emacs sessions.  *\/) */
+/*   (Lisp_Object obj) */
+/* { */
+/*   return hashfn_equal (obj, NULL); */
+/* } */
 
-DEFUN ("sxhash-equal-including-properties", Fsxhash_equal_including_properties,
-       Ssxhash_equal_including_properties, 1, 1, 0,
-       doc: /* Return an integer hash code for OBJ suitable for
-`equal-including-properties'.
-If (sxhash-equal-including-properties A B), then
-(= (sxhash-equal-including-properties A) (sxhash-equal-including-properties B)).
+/* DEFUN ("sxhash-equal-including-properties", Fsxhash_equal_including_properties, */
+/*        Ssxhash_equal_including_properties, 1, 1, 0, */
+/*        doc: /\* Return an integer hash code for OBJ suitable for */
+/* `equal-including-properties'. */
+/* If (sxhash-equal-including-properties A B), then */
+/* (= (sxhash-equal-including-properties A) (sxhash-equal-including-properties B)). */
 
-Hash codes are not guaranteed to be preserved across Emacs sessions.  */)
-  (Lisp_Object obj)
-{
-  if (STRINGP (obj))
-    {
-      Lisp_Object collector = Fcons (Qnil, Qnil);
-      traverse_intervals (string_intervals (obj), 0, collect_interval,
-			  collector);
-      return
-	make_ufixnum (
-	  SXHASH_REDUCE (sxhash_combine (sxhash (obj),
-					 sxhash (CDR (collector)))));
-    }
+/* Hash codes are not guaranteed to be preserved across Emacs sessions.  *\/) */
+/*   (Lisp_Object obj) */
+/* { */
+/*   if (STRINGP (obj)) */
+/*     { */
+/*       Lisp_Object collector = Fcons (Qnil, Qnil); */
+/*       traverse_intervals (string_intervals (obj), 0, collect_interval, */
+/* 			  collector); */
+/*       return */
+/* 	make_ufixnum ( */
+/* 	  SXHASH_REDUCE (sxhash_combine (sxhash (obj), */
+/* 					 sxhash (CDR (collector))))); */
+/*     } */
 
-  return hashfn_equal (obj, NULL);
-}
+/*   return hashfn_equal (obj, NULL); */
+/* } */
 
 DEFUN ("make-hash-table", Fmake_hash_table, Smake_hash_table, 0, MANY, 0,
        doc: /* Create and return a new hash table.
@@ -6179,10 +6179,6 @@ syms_of_fns (void)
   DEFSYM (Qkey_or_value, "key-or-value");
   DEFSYM (Qkey_and_value, "key-and-value");
 
-  defsubr (&Ssxhash_eq);
-  defsubr (&Ssxhash_eql);
-  defsubr (&Ssxhash_equal);
-  defsubr (&Ssxhash_equal_including_properties);
   defsubr (&Smake_hash_table);
   defsubr (&Scopy_hash_table);
   defsubr (&Shash_table_count);
