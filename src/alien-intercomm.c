@@ -338,21 +338,37 @@ Lisp_Object fread_lisp_binary_object(FILE *stream) {
   return result;
 }
 
+Lisp_Object find_in_stack (Lisp_Object obj, Lisp_Object stack)
+/* return Qnil if element not found in stack. Stack is not recursive */
+{
+  Lisp_Object iterator = stack;
+  printf("searching in stack for %ld\n", (void*) obj);
+  while (! NILP(iterator))
+    {
+      printf("iterator %ld\n", (void*) XCAR(iterator));
+      if (EQ(obj, XCAR(iterator)))
+	{
+	  return obj;
+	}
+      iterator = XCDR(iterator);
+    }
+  return Qnil;
+}
 
-void fprint_lisp_object(Lisp_Object obj, FILE *stream, int toplevel)
+void fprint_lisp_object(Lisp_Object obj, FILE *stream, Lisp_Object stack)
 {
   switch (XTYPE (obj))
     {
     case_Lisp_Int:
-    {
+      {
 	fprintf (stream, "%ld", XFIXNUM (obj));
-    }
-    break;
+      }
+      break;
     case Lisp_Float:
-    {
+      {
 	fprintf (stream, "%lf", XFLOAT_DATA (obj));
-    }
-    break;
+      }
+      break;
     case Lisp_String:
       {
 	fprintf (stream, "\"");
@@ -366,23 +382,20 @@ void fprint_lisp_object(Lisp_Object obj, FILE *stream, int toplevel)
 	    fprintf (stream, "%c", data[idx]);
 	  }
 	fprintf (stream, "\"");
-    }
-    break;
+      }
+      break;
     case Lisp_Symbol:
-    {
-      char* symbol_name = SSDATA (SYMBOL_NAME (obj));
-      if (strcmp(symbol_name, "`") == 0)
+      {
+	char* symbol_name = SSDATA (SYMBOL_NAME (obj));
+	if (strcmp(symbol_name, "`") == 0)
 	  {
 	    symbol_name = (char*)"backquote";
 	  }
-      if (strcmp(symbol_name, ",") == 0)
+	if (strcmp(symbol_name, ",") == 0)
 	  {
 	    symbol_name = (char*)"comma";
 	  }
-      if (toplevel)
-	{
-	  fprintf (stream, "'");
-	}
+	fprintf (stream, "'");
 
 	for (int idx = 0; idx < strlen(symbol_name); idx++)
 	  {
@@ -392,23 +405,41 @@ void fprint_lisp_object(Lisp_Object obj, FILE *stream, int toplevel)
 	    }
 	    fprintf (stream, "%c", c);
 	  }
-    }
-    break;
+      }
+      break;
     case Lisp_Cons:
-    {
+      {
 	fprintf (stream, "(cons ");
-	fprint_lisp_object (XCAR (obj), stream, 1);
+	Lisp_Object check = find_in_stack (XCAR(obj), stack);
+	if (NILP(check))
+	  {
+	    fprint_lisp_object (XCAR (obj), stream, Fcons(XCAR(obj), stack));
+	  }
+	else
+	  {
+	    fprint_lisp_object (build_string("recursion"), stream, stack);
+	  } 
 	fprintf (stream, " ");
-	fprint_lisp_object (XCDR (obj), stream, 1);
+
+	check = find_in_stack (XCDR(obj), stack);
+	if (NILP(check))
+	  {
+	    fprint_lisp_object (XCDR (obj), stream, Fcons(XCDR(obj), stack));
+	  }
+	else
+	  {
+	    fprint_lisp_object (build_string("recursion"), stream, stack);
+	  } 
+
 	fprintf (stream, ")");
-    }
-    break;
+      }
+      break;
     case Lisp_Vectorlike:
-    {
-      long vector_type = PSEUDOVECTOR_TYPE (XVECTOR (obj));
-      printf("vector %ld\n", vector_type);
-    }
-    break;
+      {
+	long vector_type = PSEUDOVECTOR_TYPE (XVECTOR (obj));
+	printf("vector %ld\n", vector_type);
+      }
+      break;
     default:
       fprintf(stream, "\"unsupported\"");
     }
@@ -417,7 +448,7 @@ void fprint_lisp_object(Lisp_Object obj, FILE *stream, int toplevel)
 void debug_lisp_object (const char* message, Lisp_Object obj)
 {
   printf("%s ", message);
-  fprint_lisp_object(obj, stdout, 1);
+  fprint_lisp_object(obj, stdout, Fcons(obj, Qnil));
   printf("\n");
   fflush(stdout);
 }
@@ -611,7 +642,20 @@ init_alien_intercomm (void)
   
   /* Lisp_Object n = intern("nil"); */
   /* printf("test %d\n", NILP(n)); */
-  /* exit(0); */
+  Lisp_Object 
+    num1 = make_fixnum(1),
+    num2 = make_fixnum(2);
+  // (1 (2 (#)))
+  Lisp_Object 
+    cons2 = Fcons(num2, num1),
+    cons1 = Fcons(num1, cons2);
+  XSETCDR (cons2, cons1);
+  
+
+  /* XSETCDR (val, cdr); */
+  debug_lisp_object("cons:", cons1);
+
+  exit(0);
 
   /* Lisp_Object test = intern("test1"); */
   /* Fset(test, make_fixnum(34)); */
