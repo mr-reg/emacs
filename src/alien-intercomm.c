@@ -217,7 +217,7 @@ void fwrite_lisp_binary_object(Lisp_Object obj, FILE *stream, Lisp_Object stack)
     {
       type = 'C';
       fwrite (&type, 1, 1, stream);
-      unsigned long cons_address = (void*) obj;
+      unsigned long cons_address = (unsigned long) obj;
       fwrite (&cons_address, sizeof (unsigned long), 1, stream);
 
       Lisp_Object check;
@@ -230,7 +230,7 @@ void fwrite_lisp_binary_object(Lisp_Object obj, FILE *stream, Lisp_Object stack)
 	{
 	  type = 'R';
 	  fwrite (&type, 1, 1, stream);
-	  unsigned long xcar_address = (void*) XCAR (obj);
+	  unsigned long xcar_address = (unsigned long) XCAR (obj);
 	  fwrite (&xcar_address, sizeof (unsigned long), 1, stream);
 	} 
 
@@ -243,7 +243,7 @@ void fwrite_lisp_binary_object(Lisp_Object obj, FILE *stream, Lisp_Object stack)
 	{
 	  type = 'R';
 	  fwrite (&type, 1, 1, stream);
-	  unsigned long xcdr_address = (void*) XCDR (obj);
+	  unsigned long xcdr_address = (unsigned long) XCDR (obj);
 	  fwrite (&xcdr_address, sizeof (unsigned long), 1, stream);
 	} 
     }
@@ -299,7 +299,7 @@ void fwrite_lisp_binary_object(Lisp_Object obj, FILE *stream, Lisp_Object stack)
     }
 }
 
-Lisp_Object fread_lisp_binary_object(FILE *stream) {
+Lisp_Object fread_lisp_binary_object(FILE *stream, Lisp_Object stack) {
   Lisp_Object result = Qnil;
   char c;
   fread(&c, 1, 1, stream);
@@ -346,18 +346,43 @@ Lisp_Object fread_lisp_binary_object(FILE *stream) {
       {
 	long addr = 0;
 	fread (&addr, sizeof(long), 1, stream);
-	printf("addr %ld\n", addr);
-	Lisp_Object car = fread_lisp_binary_object(stream);
-	Lisp_Object cdr = fread_lisp_binary_object(stream);
-	result = Fcons(car, cdr);
+	Lisp_Object cons = Fcons(Qnil, Qnil);
+	stack = Fcons(Fcons(make_fixnum(addr), cons), stack);
+	/* printf("addr %ld\n", addr); */
+	XSETCAR (cons, fread_lisp_binary_object(stream, stack));
+	XSETCDR (cons, fread_lisp_binary_object(stream, stack));
+	result = cons;
       }
       break;
+    case 'R':
+      {
+	long addr = 0;
+	fread (&addr, sizeof (long), 1, stream);
+	Lisp_Object iterator = stack;
+	Lisp_Object laddr = make_fixnum(addr);
+	result = NULL;
+	while (! NILP(iterator))
+	  {
+	    if (EQ(laddr, XCAR(XCAR(iterator))))
+	      {
+		result = XCDR (XCAR (iterator));
+		/* printf("found addr %ld in stack\n", addr); */
+		break;
+	      }
+	    iterator = XCDR(iterator);
+	  }
+	if (result == NULL)
+	  {
+	    printf("addr not found in stack %ld\n", addr);
+	    emacs_abort();
+	  }
+      }
     /* case 'L': */
     /*   { */
     /* 	Lisp_Object cdr = fread_lisp_binary_object(stream); */
     /* 	result = Fcons(Qalien_var, cdr); */
     /*   } */
-    /*   break; */
+      break;
     case 'V':
       {
 	printf("read_binary: unsupported vector\n");
@@ -561,9 +586,17 @@ Lisp_Object alien_rpc (char* func, ptrdiff_t argc, Lisp_Object *argv)
     }
   }
   mtx_unlock(&intercomm_mutex);
+#ifdef RPC_DEBUG
+  char* data = zmq_msg_data(&in_msg);
+  for (long addr = 0; addr < zmq_msg_size(&in_msg); addr++)
+  {
+    printf("%d ", data[addr]);
+  }
+  printf("\n");
+#endif
   FILE *stream = fmemopen(zmq_msg_data(&in_msg), zmq_msg_size(&in_msg), "r");
-  Lisp_Object lmessage_type = fread_lisp_binary_object(stream);
-  Lisp_Object result = fread_lisp_binary_object(stream);
+  Lisp_Object lmessage_type = fread_lisp_binary_object(stream, Qnil);
+  Lisp_Object result = fread_lisp_binary_object(stream, Qnil);
 #ifdef RPC_DEBUG
   debug_lisp_object("RPC_DEBUG message_type: ", lmessage_type);
   debug_lisp_object("RPC_DEBUG response: ", result);
@@ -671,22 +704,22 @@ init_alien_intercomm (void)
   
   /* Lisp_Object n = intern("nil"); */
   /* printf("test %d\n", NILP(n)); */
-  Lisp_Object 
-    num1 = make_fixnum(1),
-    num2 = make_fixnum(2);
-  // (1 (2 (#)))
-  Lisp_Object 
-    cons2 = Fcons(num2, num1),
-    cons1 = Fcons(num1, cons2);
-  XSETCDR (cons2, cons1);
-  
 
-  /* XSETCDR (val, cdr); */
-  debug_lisp_object("cons:", cons1);
-  Lisp_Object result = Falien_set_internal(Atest_alien_var, cons1, Qnil, Qnil);
-  debug_lisp_object("result:", result);
+
+  /* ////// recursion test */
+  /* Lisp_Object  */
+  /*   num1 = make_fixnum(1), */
+  /*   num2 = make_fixnum(2); */
+  /* // (1 (2 (#))) */
+  /* Lisp_Object  */
+  /*   cons2 = Fcons(num2, num1), */
+  /*   cons1 = Fcons(num1, cons2); */
+  /* XSETCDR (cons2, cons1); */
+  /* debug_lisp_object("cons:", cons1); */
+  /* Lisp_Object result = Falien_set_internal(Atest_alien_var, cons1, Qnil, Qnil); */
+  /* debug_lisp_object("result:", result); */
   
-  exit(0);
+  /* exit(0); */
 
   /* Lisp_Object test = intern("test1"); */
   /* Fset(test, make_fixnum(34)); */
