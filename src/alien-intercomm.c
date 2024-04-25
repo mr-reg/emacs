@@ -154,8 +154,24 @@ static void zmq_check(ssize_t status)
   }
 }
 
+Lisp_Object find_in_stack (Lisp_Object obj, Lisp_Object stack)
+/* return Qnil if element not found in stack. Stack is not recursive */
+{
+  Lisp_Object iterator = stack;
+  /* printf("searching in stack for %ld\n", (void*) obj); */
+  while (! NILP(iterator))
+    {
+      /* printf("iterator %ld\n", (void*) XCAR(iterator)); */
+      if (EQ(obj, XCAR(iterator)))
+	{
+	  return obj;
+	}
+      iterator = XCDR(iterator);
+    }
+  return Qnil;
+}
 
-void fwrite_lisp_binary_object(Lisp_Object obj, FILE *stream) {
+void fwrite_lisp_binary_object(Lisp_Object obj, FILE *stream, Lisp_Object stack) {
   char type = 0;
   switch (XTYPE (obj))
     {
@@ -201,8 +217,35 @@ void fwrite_lisp_binary_object(Lisp_Object obj, FILE *stream) {
     {
       type = 'C';
       fwrite (&type, 1, 1, stream);
-      fwrite_lisp_binary_object (XCAR (obj), stream);
-      fwrite_lisp_binary_object (XCDR (obj), stream);
+      unsigned long cons_address = (void*) obj;
+      fwrite (&cons_address, sizeof (unsigned long), 1, stream);
+
+      Lisp_Object check;
+      check = find_in_stack (XCAR(obj), stack);
+      if (NILP(check))
+	{
+	  fwrite_lisp_binary_object (XCAR (obj), stream, Fcons(XCAR(obj), stack));
+	}
+      else
+	{
+	  type = 'R';
+	  fwrite (&type, 1, 1, stream);
+	  unsigned long xcar_address = (void*) XCAR (obj);
+	  fwrite (&xcar_address, sizeof (unsigned long), 1, stream);
+	} 
+
+      check = find_in_stack (XCDR(obj), stack);
+      if (NILP(check))
+	{
+	  fwrite_lisp_binary_object (XCDR (obj), stream, Fcons(XCDR(obj), stack));
+	}
+      else
+	{
+	  type = 'R';
+	  fwrite (&type, 1, 1, stream);
+	  unsigned long xcdr_address = (void*) XCDR (obj);
+	  fwrite (&xcdr_address, sizeof (unsigned long), 1, stream);
+	} 
     }
     break;
     case Lisp_Vectorlike:
@@ -210,25 +253,25 @@ void fwrite_lisp_binary_object(Lisp_Object obj, FILE *stream) {
       long vector_type = PSEUDOVECTOR_TYPE (XVECTOR (obj));
       switch (vector_type)
 	{
-	case PVEC_HASH_TABLE:
-	  {
-	    type = 'H';
-	    fwrite(&type, 1, 1, stream);
-	    struct Lisp_Hash_Table *h = XHASH_TABLE (obj);
-	    fwrite_lisp_binary_object (h->test.name, stream);
-	    fwrite_lisp_binary_object (Fhash_table_rehash_size (obj), stream);
-	    fwrite_lisp_binary_object (Fhash_table_rehash_threshold (obj), stream);
-	    long len = HASH_TABLE_SIZE (h);
-	    fwrite(&len, sizeof(long), 1, stream);
-	    for (long idx = 0; idx < len; idx ++)
-	      {
-		printf("writing hash element %ld\n", idx);
-		fwrite_lisp_binary_object(HASH_KEY(h, idx), stream);
-		fwrite_lisp_binary_object(HASH_VALUE(h, idx), stream);
-	      }
-	    printf("hash table written\n");
-	  }
-	  break;
+	/* case PVEC_HASH_TABLE: */
+	/*   { */
+	/*     type = 'H'; */
+	/*     fwrite(&type, 1, 1, stream); */
+	/*     struct Lisp_Hash_Table *h = XHASH_TABLE (obj); */
+	/*     fwrite_lisp_binary_object (h->test.name, stream); */
+	/*     fwrite_lisp_binary_object (Fhash_table_rehash_size (obj), stream); */
+	/*     fwrite_lisp_binary_object (Fhash_table_rehash_threshold (obj), stream); */
+	/*     long len = HASH_TABLE_SIZE (h); */
+	/*     fwrite(&len, sizeof(long), 1, stream); */
+	/*     for (long idx = 0; idx < len; idx ++) */
+	/*       { */
+	/* 	printf("writing hash element %ld\n", idx); */
+	/* 	fwrite_lisp_binary_object(HASH_KEY(h, idx), stream); */
+	/* 	fwrite_lisp_binary_object(HASH_VALUE(h, idx), stream); */
+	/*       } */
+	/*     printf("hash table written\n"); */
+	/*   } */
+	/*   break; */
       /* 	case PVEC_NORMAL_VECTOR: */
       /* 	  { */
       /* 	    printf("writing normal vector\n"); */
@@ -252,7 +295,7 @@ void fwrite_lisp_binary_object(Lisp_Object obj, FILE *stream) {
     }
     break;
     default:
-      fwrite_lisp_binary_object (build_string("write: unsupported type"), stream);
+      fwrite_lisp_binary_object (build_string("write: unsupported type"), stream, Qnil);
     }
 }
 
@@ -301,6 +344,9 @@ Lisp_Object fread_lisp_binary_object(FILE *stream) {
       break;
     case 'C':
       {
+	long addr = 0;
+	fread (&addr, sizeof(long), 1, stream);
+	printf("addr %ld\n", addr);
 	Lisp_Object car = fread_lisp_binary_object(stream);
 	Lisp_Object cdr = fread_lisp_binary_object(stream);
 	result = Fcons(car, cdr);
@@ -336,23 +382,6 @@ Lisp_Object fread_lisp_binary_object(FILE *stream) {
       }
     }
   return result;
-}
-
-Lisp_Object find_in_stack (Lisp_Object obj, Lisp_Object stack)
-/* return Qnil if element not found in stack. Stack is not recursive */
-{
-  Lisp_Object iterator = stack;
-  printf("searching in stack for %ld\n", (void*) obj);
-  while (! NILP(iterator))
-    {
-      printf("iterator %ld\n", (void*) XCAR(iterator));
-      if (EQ(obj, XCAR(iterator)))
-	{
-	  return obj;
-	}
-      iterator = XCDR(iterator);
-    }
-  return Qnil;
 }
 
 void fprint_lisp_object(Lisp_Object obj, FILE *stream, Lisp_Object stack)
@@ -498,12 +527,12 @@ Lisp_Object alien_rpc (char* func, ptrdiff_t argc, Lisp_Object *argv)
       {
 	argl = Fcons(argv[argi], argl);
       }
-    fwrite_lisp_binary_object(make_int(message_id), sstream);
-    fwrite_lisp_binary_object(make_int(MESSAGE_TYPE_RPC), sstream);
-    fwrite_lisp_binary_object(make_int(3), sstream); // nargs
-    fwrite_lisp_binary_object(build_string(func), sstream);
-    fwrite_lisp_binary_object(argl, sstream);
-    fwrite_lisp_binary_object(context, sstream);
+    fwrite_lisp_binary_object(make_int(message_id), sstream, Qnil);
+    fwrite_lisp_binary_object(make_int(MESSAGE_TYPE_RPC), sstream, Qnil);
+    fwrite_lisp_binary_object(make_int(3), sstream, Qnil); // nargs
+    fwrite_lisp_binary_object(build_string(func), sstream, Qnil);
+    fwrite_lisp_binary_object(argl, sstream, Qnil);
+    fwrite_lisp_binary_object(context, sstream, Qnil);
     fclose(sstream);
 
     zmq_msg_t out_msg;
@@ -654,7 +683,9 @@ init_alien_intercomm (void)
 
   /* XSETCDR (val, cdr); */
   debug_lisp_object("cons:", cons1);
-
+  Lisp_Object result = Falien_set_internal(Atest_alien_var, cons1, Qnil, Qnil);
+  debug_lisp_object("result:", result);
+  
   exit(0);
 
   /* Lisp_Object test = intern("test1"); */
