@@ -26,8 +26,8 @@
 #define MESSAGE_TYPE_SIGNAL 2
 #define MESSAGE_TYPE_RPC 3
 
-/* #define RPC_DEBUG */
-/* #define ALIEN_VAR_DEBUG */
+#define RPC_DEBUG
+#define ALIEN_VAR_DEBUG
 void add_alien_forward (Lisp_Object sym, Lisp_Object alien_symbol)
 {
   struct Lisp_Objfwd const o_fwd = {Lisp_Fwd_Alien, &alien_symbol};
@@ -411,7 +411,14 @@ Lisp_Object fread_lisp_binary_object(FILE *stream, Lisp_Object stack) {
 
 void fprint_lisp_object(Lisp_Object obj, FILE *stream, Lisp_Object stack)
 {
-  switch (XTYPE (obj))
+  /* add_alien_forward_if_required(obj); */
+  int type = XTYPE (obj);
+  if (ALIENP(obj))
+    {
+      fprintf (stream, "[alien]");
+    }
+  fprintf(stream, "[type:%d] ", type);
+  switch (type)
     {
     case_Lisp_Int:
       {
@@ -695,6 +702,13 @@ init_alien_intercomm (void)
   defsubr (&Scommon_lisp_apply);
   defsubr (&Scommon_lisp_init);
 
+  Lisp_Object map = Fmake_hash_table2(0, NULL);
+  add_alien_forward_if_required(map);
+  debug_lisp_object("map", map);
+  Fputhash2(make_fixnum(30), make_fixnum(240), map);
+  Lisp_Object test = Fgethash2(make_fixnum(30), map, make_fixnum(10));
+  debug_lisp_object("result", test);
+  
   /* const rlim_t kStackSize = 100 * 1000 * 1024;   // min stack size = 16 MB */
   /* struct rlimit rl; */
   /* int result; */
@@ -719,7 +733,7 @@ init_alien_intercomm (void)
   /* Lisp_Object result = Falien_set_internal(Atest_alien_var, cons1, Qnil, Qnil); */
   /* debug_lisp_object("result:", result); */
   
-  /* exit(0); */
+  exit(0);
 
   /* Lisp_Object test = intern("test1"); */
   /* Fset(test, make_fixnum(34)); */
