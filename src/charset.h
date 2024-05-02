@@ -267,7 +267,7 @@ extern int emacs_mule_charset[256];
 
 /* Return the attribute vector of charset whose symbol is SYMBOL.  */
 #define CHARSET_SYMBOL_ATTRIBUTES(symbol)	\
-  Fgethash ((symbol), Vcharset_hash_table, Qnil)
+  Fgethash_old ((symbol), Vcharset_hash_table, Qnil)
 
 #define CHARSET_ATTR_ID(attrs)		AREF ((attrs), charset_id)
 #define CHARSET_ATTR_NAME(attrs)	AREF ((attrs), charset_name)

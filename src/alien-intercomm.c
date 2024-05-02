@@ -42,6 +42,10 @@ unsigned char alien_var_cache[ALIEN_VAR_CACHE_SIZE] = { 0 };
 Lisp_Object
 add_alien_forward_if_required (Lisp_Object var)
 {
+  if (XTYPE (var) != Lisp_Symbol)
+    {
+      return var;
+    }
   /* struct Lisp_Symbol *sym = XSYMBOL (var); */
   if (ALIENP(var))
     {
@@ -253,40 +257,24 @@ void fwrite_lisp_binary_object(Lisp_Object obj, FILE *stream, Lisp_Object stack)
       long vector_type = PSEUDOVECTOR_TYPE (XVECTOR (obj));
       switch (vector_type)
 	{
-	/* case PVEC_HASH_TABLE: */
-	/*   { */
-	/*     type = 'H'; */
-	/*     fwrite(&type, 1, 1, stream); */
-	/*     struct Lisp_Hash_Table *h = XHASH_TABLE (obj); */
-	/*     fwrite_lisp_binary_object (h->test.name, stream); */
-	/*     fwrite_lisp_binary_object (Fhash_table_rehash_size (obj), stream); */
-	/*     fwrite_lisp_binary_object (Fhash_table_rehash_threshold (obj), stream); */
-	/*     long len = HASH_TABLE_SIZE (h); */
-	/*     fwrite(&len, sizeof(long), 1, stream); */
-	/*     for (long idx = 0; idx < len; idx ++) */
-	/*       { */
-	/* 	printf("writing hash element %ld\n", idx); */
-	/* 	fwrite_lisp_binary_object(HASH_KEY(h, idx), stream); */
-	/* 	fwrite_lisp_binary_object(HASH_VALUE(h, idx), stream); */
-	/*       } */
-	/*     printf("hash table written\n"); */
-	/*   } */
-	/*   break; */
-      /* 	case PVEC_NORMAL_VECTOR: */
-      /* 	  { */
-      /* 	    printf("writing normal vector\n"); */
-      /* long vector_type = PSEUDOVECTOR_TYPE (XVECTOR (obj)); */
-      /* type = 'V'; */
-      /* fwrite(&type, 1, 1, stream); */
-      /* fwrite(&vector_type, sizeof(long), 1, stream); */
-      /* long len = ASIZE(obj); */
-      /* fwrite(&len, sizeof(long), 1, stream); */
-      /* for (ptrdiff_t idx = 0; idx < len; idx ++) */
-      /* 	{ */
-      /* 	  printf("writing element %ld from %ld\n", idx, len); */
-      /* 	  fwrite_lisp_binary_object(AREF(obj, idx), stream); */
-      /* 	} */
-      /* 	  } */
+	case PVEC_NORMAL_VECTOR:
+	  {
+	    printf("writing normal vector\n");
+	    type = 'N';
+	    fwrite(&type, 1, 1, stream);
+	    long len = ASIZE(obj);
+	    fwrite(&len, sizeof(long), 1, stream);
+	    for (ptrdiff_t idx = 0; idx < len; idx ++)
+	      {
+		printf("writing element %ld from %ld\n", idx, len);
+		if (idx == 15)
+		  {
+		    debug_lisp_object ("=", AREF (obj, idx));
+		  }
+		fwrite_lisp_binary_object(AREF(obj, idx), stream, stack);
+	      }
+	  }
+	  break;
 	default:
 	  printf("write_binary: unsupported vector type %ld\n", vector_type);
 	  emacs_abort();
@@ -385,18 +373,9 @@ Lisp_Object fread_lisp_binary_object(FILE *stream, Lisp_Object stack) {
       break;
     case 'V':
       {
-	printf("read_binary: unsupported vector\n");
-	emacs_abort();
-	/* long vector_type = 0; */
-	/* fread (&vector_type, sizeof(long), 1, stream); */
-	/* long len = 0; */
-	/* fread (&len, sizeof(long), 1, stream); */
-	/* result = make_vector(len, Qnil); */
-	/* XSETPVECTYPE (XVECTOR (result), vector_type); */
-	/* for (ptrdiff_t idx = 0; idx < len; idx ++) */
-	/*   { */
-	/*     ASET(result, idx, fread_lisp_binary_object(stream)); */
-	/*   } */
+	long alien_idx = 0;
+	fread (&alien_idx, sizeof (long), 1, stream);
+	result = Fcons(Qalien_value, make_fixnum(alien_idx));
       }
       break;
     default:
@@ -691,6 +670,7 @@ init_alien_intercomm (void)
   mtx_init(&intercomm_mutex, mtx_plain);
   zmq_context = zmq_ctx_new();
   printf("zmq initialized\n");
+  DEFSYM (Qalien_value, "alien-value");
   char intercomm_addr[] = "tcp://127.0.0.1:7447";
   zmq_client = zmq_socket(zmq_context, ZMQ_REQ);
   if (!zmq_client)
@@ -702,19 +682,20 @@ init_alien_intercomm (void)
   defsubr (&Scommon_lisp_apply);
   defsubr (&Scommon_lisp_init);
 
-  Lisp_Object map = Fmake_hash_table2(0, NULL);
-  add_alien_forward_if_required(map);
-  debug_lisp_object("map", map);
-  Fputhash2(make_fixnum(30), make_fixnum(240), map);
-  Lisp_Object test = Fgethash2(make_fixnum(30), map, make_fixnum(10));
-  debug_lisp_object("result", test);
+  ///// init done
+
+  /* Lisp_Object map = Fmake_hash_table2(0, NULL); */
+  /* add_alien_forward_if_required(map); */
+  /* debug_lisp_object("map", map); */
+  /* Fputhash2(make_fixnum(30), make_fixnum(240), map); */
+  /* Lisp_Object test = Fgethash2(make_fixnum(30), map, make_fixnum(10)); */
+  /* debug_lisp_object("result", test); */
   
   /* const rlim_t kStackSize = 100 * 1000 * 1024;   // min stack size = 16 MB */
   /* struct rlimit rl; */
   /* int result; */
   /* result = setrlimit(RLIMIT_STACK, &rl); */
   /* printf("stack result %d\n", result); */
-  /* DEFSYM (Qalien_var, "alien-var"); */
   
   /* Lisp_Object n = intern("nil"); */
   /* printf("test %d\n", NILP(n)); */
@@ -733,7 +714,7 @@ init_alien_intercomm (void)
   /* Lisp_Object result = Falien_set_internal(Atest_alien_var, cons1, Qnil, Qnil); */
   /* debug_lisp_object("result:", result); */
   
-  exit(0);
+  /* exit(0); */
 
   /* Lisp_Object test = intern("test1"); */
   /* Fset(test, make_fixnum(34)); */
