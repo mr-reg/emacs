@@ -4417,12 +4417,8 @@ For internal use only.  */)
 static uintptr_t
 hash_string_case_insensitive (Lisp_Object string)
 {
-  const unsigned char *s;
-  uintptr_t hash = 0;
-  eassert (STRINGP (string));
-  for (s = SDATA (string); *s; ++s)
-    hash = (hash << 1) ^ c_tolower (*s);
-  return hash;
+  Lisp_Object hash = Fsxhash_case_insensitive(string);
+  return XFIXNUM(hash);
 }
 
 
@@ -7286,10 +7282,7 @@ only for this purpose.  */);
 
   DEFVAR_LISP ("face--new-frame-defaults", Vface_new_frame_defaults,
     doc: /* Hash table of global face definitions (for internal use only.)  */);
-  Vface_new_frame_defaults =
-    /* 33 entries is enough to fit all basic faces */
-    make_hash_table (hashtest_eq, 33, DEFAULT_REHASH_SIZE,
-                     DEFAULT_REHASH_THRESHOLD, Qnil, false);
+  Vface_new_frame_defaults = CALLN (Fmake_hash_table, QCtest, Qeq);
 
   DEFVAR_LISP ("face-default-stipple", Vface_default_stipple,
     doc: /* Default stipple pattern used on monochrome displays.

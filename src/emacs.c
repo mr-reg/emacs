@@ -464,7 +464,7 @@ terminate_due_to_signal (int sig, int backtrace_limit)
     pthread_sigmask (SIG_UNBLOCK, &unblocked, 0);
   }
 #endif
-
+  /* exit(0); */
   emacs_raise (sig);
 
   /* This shouldn't be executed, but it prevents a warning.  */

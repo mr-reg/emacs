@@ -783,7 +783,7 @@ test of free variables in the following ways:
 (defvar macroexp--pending-eager-loads nil
   "Stack of files currently undergoing eager macro-expansion.")
 
-(defvar macroexp--debug-eager nil)
+(defvar macroexp--debug-eager t)
 
 (defun internal-macroexpand-for-load (form full-p)
   ;; Called from the eager-macroexpansion in readevalloop.

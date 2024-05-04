@@ -26,8 +26,8 @@
 #define MESSAGE_TYPE_SIGNAL 2
 #define MESSAGE_TYPE_RPC 3
 
-#define RPC_DEBUG
-#define ALIEN_VAR_DEBUG
+/* #define RPC_DEBUG */
+/* #define ALIEN_VAR_DEBUG */
 void add_alien_forward (Lisp_Object sym, Lisp_Object alien_symbol)
 {
   struct Lisp_Objfwd const o_fwd = {Lisp_Fwd_Alien, &alien_symbol};
@@ -175,6 +175,7 @@ Lisp_Object find_in_stack (Lisp_Object obj, Lisp_Object stack)
   return Qnil;
 }
 
+// IDASCRNP
 void fwrite_lisp_binary_object(Lisp_Object obj, FILE *stream, Lisp_Object stack) {
   char type = 0;
   switch (XTYPE (obj))
@@ -259,20 +260,27 @@ void fwrite_lisp_binary_object(Lisp_Object obj, FILE *stream, Lisp_Object stack)
 	{
 	case PVEC_NORMAL_VECTOR:
 	  {
-	    printf("writing normal vector\n");
+	    /* printf("writing normal vector\n"); */
 	    type = 'N';
 	    fwrite(&type, 1, 1, stream);
 	    long len = ASIZE(obj);
 	    fwrite(&len, sizeof(long), 1, stream);
 	    for (ptrdiff_t idx = 0; idx < len; idx ++)
 	      {
-		printf("writing element %ld from %ld\n", idx, len);
-		if (idx == 15)
-		  {
-		    debug_lisp_object ("=", AREF (obj, idx));
-		  }
+		/* printf("writing element %ld from %ld\n", idx, len); */
+		/* if (idx == 15) */
+		/*   { */
+		/*     debug_lisp_object ("=", AREF (obj, idx)); */
+		/*   } */
 		fwrite_lisp_binary_object(AREF(obj, idx), stream, stack);
 	      }
+	  }
+	  break;
+	case PVEC_SUBR:
+	  {
+	    type = 'P';
+	    fwrite (&type, 1, 1, stream);
+	    fwrite (obj, 8, 1, stream);
 	  }
 	  break;
 	default:
@@ -376,6 +384,22 @@ Lisp_Object fread_lisp_binary_object(FILE *stream, Lisp_Object stack) {
 	long alien_idx = 0;
 	fread (&alien_idx, sizeof (long), 1, stream);
 	result = Fcons(Qalien_value, make_fixnum(alien_idx));
+      }
+      break;
+    case 'N':
+      {
+	long vector_length = 0;
+	fread (&vector_length, sizeof (long), 1, stream);
+	result = make_vector (vector_length, Qnil);
+	for (long idx = 0; idx < vector_length; idx++)
+	  {
+	    ASET(result, idx, fread_lisp_binary_object(stream, stack));
+	  }
+      }
+      break;
+    case 'P':
+      {
+	fread(&result, 8, 1, stream);
       }
       break;
     default:

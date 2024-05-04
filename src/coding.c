@@ -11410,7 +11410,7 @@ usage: (define-coding-system-internal ...)  */)
 	  ASET (this_spec, 0, attrs);
 	  ASET (this_spec, 1, this_aliases);
 	  ASET (this_spec, 2, this_eol_type);
-	  Fputhash (this_name, this_spec, Vcoding_system_hash_table);
+	  Fputhash_old (this_name, this_spec, Vcoding_system_hash_table);
 	  Vcoding_system_list = Fcons (this_name, Vcoding_system_list);
 	  val = Fassoc (Fsymbol_name (this_name), Vcoding_system_alist, Qnil);
 	  if (NILP (val))
@@ -11425,7 +11425,7 @@ usage: (define-coding-system-internal ...)  */)
   ASET (spec_vec, 1, aliases);
   ASET (spec_vec, 2, eol_type);
 
-  Fputhash (name, spec_vec, Vcoding_system_hash_table);
+  Fputhash_old (name, spec_vec, Vcoding_system_hash_table);
   Vcoding_system_list = Fcons (name, Vcoding_system_list);
   val = Fassoc (Fsymbol_name (name), Vcoding_system_alist, Qnil);
   if (NILP (val))
@@ -11544,7 +11544,7 @@ DEFUN ("define-coding-system-alias", Fdefine_coding_system_alias,
 				     AREF (eol_type, i));
     }
 
-  Fputhash (alias, spec, Vcoding_system_hash_table);
+  Fputhash_old (alias, spec, Vcoding_system_hash_table);
   Vcoding_system_list = Fcons (alias, Vcoding_system_list);
   val = Fassoc (Fsymbol_name (alias), Vcoding_system_alist, Qnil);
   if (NILP (val))
@@ -11681,7 +11681,7 @@ void
 syms_of_coding (void)
 {
   staticpro (&Vcoding_system_hash_table);
-  Vcoding_system_hash_table = CALLN (Fmake_hash_table, QCtest, Qeq);
+  Vcoding_system_hash_table = CALLN (Fmake_hash_table_old, QCtest, Qeq);
 
   staticpro (&Vsjis_coding_system);
   Vsjis_coding_system = Qnil;

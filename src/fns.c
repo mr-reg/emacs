@@ -5211,7 +5211,7 @@ sxhash_obj (Lisp_Object obj, int depth)
 /*   return hashfn_equal (obj, NULL); */
 /* } */
 
-DEFUN ("make-hash-table-old", Fmake_hash_table_old, Smake_hash_table, 0, MANY, 0,
+DEFUN ("make-hash-table-old", Fmake_hash_table_old, Smake_hash_table_old, 0, MANY, 0,
        doc: /* Create and return a new hash table.
 
 Arguments are specified as keyword/argument pairs.  The following
@@ -5433,7 +5433,7 @@ usage: (make-hash-table &rest KEYWORD-ARGS)  */)
 /* } */
 
 
-DEFUN ("gethash-old", Fgethash_old, Sgethash, 2, 3, 0,
+DEFUN ("gethash-old", Fgethash_old, Sgethashold, 2, 3, 0,
        doc: /* Look up KEY in TABLE and return its associated value.
 If KEY is not found, return DFLT which defaults to nil.  */)
   (Lisp_Object key, Lisp_Object table, Lisp_Object dflt)
@@ -5444,24 +5444,24 @@ If KEY is not found, return DFLT which defaults to nil.  */)
 }
 
 
-/* DEFUN ("puthash", Fputhash, Sputhash, 3, 3, 0, */
-/*        doc: /\* Associate KEY with VALUE in hash table TABLE. */
-/* If KEY is already present in table, replace its current value with */
-/* VALUE.  In any case, return VALUE.  *\/) */
-/*   (Lisp_Object key, Lisp_Object value, Lisp_Object table) */
-/* { */
-/*   struct Lisp_Hash_Table *h = check_hash_table (table); */
-/*   check_mutable_hash_table (table, h); */
+DEFUN ("puthash-old", Fputhash_old, Sputhashold, 3, 3, 0,
+       doc: /* Associate KEY with VALUE in hash table TABLE.
+If KEY is already present in table, replace its current value with
+VALUE.  In any case, return VALUE.  */)
+  (Lisp_Object key, Lisp_Object value, Lisp_Object table)
+{
+  struct Lisp_Hash_Table *h = check_hash_table (table);
+  check_mutable_hash_table (table, h);
 
-/*   Lisp_Object hash; */
-/*   ptrdiff_t i = hash_lookup (h, key, &hash); */
-/*   if (i >= 0) */
-/*     set_hash_value_slot (h, i, value); */
-/*   else */
-/*     hash_put (h, key, value, hash); */
+  Lisp_Object hash;
+  ptrdiff_t i = hash_lookup (h, key, &hash);
+  if (i >= 0)
+    set_hash_value_slot (h, i, value);
+  else
+    hash_put (h, key, value, hash);
 
-/*   return value; */
-/* } */
+  return value;
+}
 
 
 /* DEFUN ("remhash", Fremhash, Sremhash, 2, 2, 0, */
