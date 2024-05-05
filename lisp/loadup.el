@@ -110,7 +110,7 @@
     (setq purify-flag (make-hash-table :test #'equal :size 80000)))
 
 (message "Using load-path %s" load-path)
-(exit)
+;; (exit)
 
 (if dump-mode
     (progn

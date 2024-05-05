@@ -39,6 +39,47 @@ void add_alien_forward (Lisp_Object sym, Lisp_Object alien_symbol)
 #define ALIEN_VAR_CACHE_SIZE 1000
 unsigned char alien_var_cache[ALIEN_VAR_CACHE_SIZE] = { 0 };
 
+#define MAX_STACK_SIZE 100000
+Lisp_Object stack[MAX_STACK_SIZE] = { 0 };
+unsigned long stack_position = 0;
+void stack_push (Lisp_Object something)
+{
+  if (stack_position >= MAX_STACK_SIZE)
+    {
+      printf("stack exhausted\n");
+      emacs_abort();
+    }
+  stack[stack_position] = something;
+  stack_position++;
+}
+int stack_empty(void)
+{
+  if (stack_position == 0)
+    {
+      return 1;
+    }
+  else
+    {
+      return 0;
+    }
+}
+Lisp_Object stack_pop (void)
+{
+  if (stack_position == 0)
+    {
+      return NULL;
+    }
+  else
+    {
+      stack_position--;
+      return stack[stack_position];
+    }
+}
+void stack_clear(void)
+{
+  stack_position = 0;
+}
+
 Lisp_Object
 add_alien_forward_if_required (Lisp_Object var)
 {
@@ -57,7 +98,7 @@ add_alien_forward_if_required (Lisp_Object var)
   unsigned id = XSYMBOL (var)->u.s.interned;
   if (id >= ALIEN_VAR_CACHE_SIZE)
     {
-      printf("id too big: sym %s id %ld\n", SSDATA (SYMBOL_NAME (var)), SBYTES (SYMBOL_NAME (var)), id);
+      printf("id too big: sym %s id %d\n", SSDATA (SYMBOL_NAME (var)), id);
       emacs_abort();
     }
   Lisp_Object boundp = Qnil;
@@ -158,25 +199,20 @@ static void zmq_check(ssize_t status)
   }
 }
 
-Lisp_Object find_in_stack (Lisp_Object obj, Lisp_Object stack)
+Lisp_Object find_in_stack (Lisp_Object obj)
 /* return Qnil if element not found in stack. Stack is not recursive */
 {
-  Lisp_Object iterator = stack;
-  /* printf("searching in stack for %ld\n", (void*) obj); */
-  while (! NILP(iterator))
-    {
-      /* printf("iterator %ld\n", (void*) XCAR(iterator)); */
-      if (EQ(obj, XCAR(iterator)))
+  for (long pos = 0; pos < stack_position; pos++) {
+    if (XLI(stack[pos]) == XLI(obj))
 	{
 	  return obj;
 	}
-      iterator = XCDR(iterator);
-    }
+  }
   return Qnil;
 }
 
 // IDASCRNP
-void fwrite_lisp_binary_object(Lisp_Object obj, FILE *stream, Lisp_Object stack) {
+void fwrite_lisp_binary_object(Lisp_Object obj, FILE *stream) {
   char type = 0;
   switch (XTYPE (obj))
     {
@@ -226,10 +262,11 @@ void fwrite_lisp_binary_object(Lisp_Object obj, FILE *stream, Lisp_Object stack)
       fwrite (&cons_address, sizeof (unsigned long), 1, stream);
 
       Lisp_Object check;
-      check = find_in_stack (XCAR(obj), stack);
+      check = find_in_stack (XCAR(obj));
       if (NILP(check))
 	{
-	  fwrite_lisp_binary_object (XCAR (obj), stream, Fcons(XCAR(obj), stack));
+	  stack_push(XCAR(obj));
+	  fwrite_lisp_binary_object (XCAR (obj), stream);
 	}
       else
 	{
@@ -239,10 +276,11 @@ void fwrite_lisp_binary_object(Lisp_Object obj, FILE *stream, Lisp_Object stack)
 	  fwrite (&xcar_address, sizeof (unsigned long), 1, stream);
 	} 
 
-      check = find_in_stack (XCDR(obj), stack);
+      check = find_in_stack (XCDR(obj));
       if (NILP(check))
 	{
-	  fwrite_lisp_binary_object (XCDR (obj), stream, Fcons(XCDR(obj), stack));
+	  stack_push(XCDR(obj));
+	  fwrite_lisp_binary_object (XCDR (obj), stream);
 	}
       else
 	{
@@ -272,7 +310,7 @@ void fwrite_lisp_binary_object(Lisp_Object obj, FILE *stream, Lisp_Object stack)
 		/*   { */
 		/*     debug_lisp_object ("=", AREF (obj, idx)); */
 		/*   } */
-		fwrite_lisp_binary_object(AREF(obj, idx), stream, stack);
+		fwrite_lisp_binary_object(AREF(obj, idx), stream);
 	      }
 	  }
 	  break;
@@ -291,11 +329,11 @@ void fwrite_lisp_binary_object(Lisp_Object obj, FILE *stream, Lisp_Object stack)
     }
     break;
     default:
-      fwrite_lisp_binary_object (build_string("write: unsupported type"), stream, Qnil);
+      fwrite_lisp_binary_object (build_string("write: unsupported type"), stream);
     }
 }
 
-Lisp_Object fread_lisp_binary_object(FILE *stream, Lisp_Object stack) {
+Lisp_Object fread_lisp_binary_object(FILE *stream) {
   Lisp_Object result = Qnil;
   char c;
   fread(&c, 1, 1, stream);
@@ -343,10 +381,10 @@ Lisp_Object fread_lisp_binary_object(FILE *stream, Lisp_Object stack) {
 	long addr = 0;
 	fread (&addr, sizeof(long), 1, stream);
 	Lisp_Object cons = Fcons(Qnil, Qnil);
-	stack = Fcons(Fcons(make_fixnum(addr), cons), stack);
+	stack_push(make_fixnum(addr));
 	/* printf("addr %ld\n", addr); */
-	XSETCAR (cons, fread_lisp_binary_object(stream, stack));
-	XSETCDR (cons, fread_lisp_binary_object(stream, stack));
+	XSETCAR (cons, fread_lisp_binary_object(stream));
+	XSETCDR (cons, fread_lisp_binary_object(stream));
 	result = cons;
       }
       break;
@@ -354,19 +392,17 @@ Lisp_Object fread_lisp_binary_object(FILE *stream, Lisp_Object stack) {
       {
 	long addr = 0;
 	fread (&addr, sizeof (long), 1, stream);
-	Lisp_Object iterator = stack;
 	Lisp_Object laddr = make_fixnum(addr);
+
 	result = NULL;
-	while (! NILP(iterator))
-	  {
-	    if (EQ(laddr, XCAR(XCAR(iterator))))
-	      {
-		result = XCDR (XCAR (iterator));
-		/* printf("found addr %ld in stack\n", addr); */
-		break;
-	      }
-	    iterator = XCDR(iterator);
-	  }
+	for (long pos = 0; pos < stack_position; pos++) {
+	  if (CONSP(stack[pos]) && EQ(XCAR(stack[pos]), laddr))
+	    {
+	      result = XCDR (stack[pos]);
+	      break;
+	    }
+	}
+	return Qnil;
 	if (result == NULL)
 	  {
 	    printf("addr not found in stack %ld\n", addr);
@@ -393,7 +429,7 @@ Lisp_Object fread_lisp_binary_object(FILE *stream, Lisp_Object stack) {
 	result = make_vector (vector_length, Qnil);
 	for (long idx = 0; idx < vector_length; idx++)
 	  {
-	    ASET(result, idx, fread_lisp_binary_object(stream, stack));
+	    ASET(result, idx, fread_lisp_binary_object(stream));
 	  }
       }
       break;
@@ -412,7 +448,7 @@ Lisp_Object fread_lisp_binary_object(FILE *stream, Lisp_Object stack) {
   return result;
 }
 
-void fprint_lisp_object(Lisp_Object obj, FILE *stream, Lisp_Object stack)
+void fprint_lisp_object(Lisp_Object obj, FILE *stream)
 {
   /* add_alien_forward_if_required(obj); */
   int type = XTYPE (obj);
@@ -474,25 +510,27 @@ void fprint_lisp_object(Lisp_Object obj, FILE *stream, Lisp_Object stack)
     case Lisp_Cons:
       {
 	fprintf (stream, "(cons ");
-	Lisp_Object check = find_in_stack (XCAR(obj), stack);
+	Lisp_Object check = find_in_stack (XCAR(obj));
 	if (NILP(check))
 	  {
-	    fprint_lisp_object (XCAR (obj), stream, Fcons(XCAR(obj), stack));
+	    stack_push(XCAR(obj));
+	    fprint_lisp_object (XCAR (obj), stream);
 	  }
 	else
 	  {
-	    fprint_lisp_object (build_string("recursion"), stream, stack);
+	    fprint_lisp_object (build_string("recursion"), stream);
 	  } 
 	fprintf (stream, " ");
 
-	check = find_in_stack (XCDR(obj), stack);
+	check = find_in_stack (XCDR(obj));
 	if (NILP(check))
 	  {
-	    fprint_lisp_object (XCDR (obj), stream, Fcons(XCDR(obj), stack));
+	    stack_push(XCDR(obj));
+	    fprint_lisp_object (XCDR (obj), stream);
 	  }
 	else
 	  {
-	    fprint_lisp_object (build_string("recursion"), stream, stack);
+	    fprint_lisp_object (build_string("recursion"), stream);
 	  } 
 
 	fprintf (stream, ")");
@@ -512,7 +550,8 @@ void fprint_lisp_object(Lisp_Object obj, FILE *stream, Lisp_Object stack)
 void debug_lisp_object (const char* message, Lisp_Object obj)
 {
   printf("%s ", message);
-  fprint_lisp_object(obj, stdout, Fcons(obj, Qnil));
+  stack_clear();
+  fprint_lisp_object(obj, stdout);
   printf("\n");
   fflush(stdout);
 }
@@ -535,6 +574,7 @@ Lisp_Object alien_rpc (char* func, ptrdiff_t argc, Lisp_Object *argv)
     alien_print_backtrace();
     emacs_abort();
   }
+  stack_clear();
   int retry = 1;
   int nretry = 3;
   zmq_msg_t in_msg;
@@ -562,12 +602,12 @@ Lisp_Object alien_rpc (char* func, ptrdiff_t argc, Lisp_Object *argv)
       {
 	argl = Fcons(argv[argi], argl);
       }
-    fwrite_lisp_binary_object(make_int(message_id), sstream, Qnil);
-    fwrite_lisp_binary_object(make_int(MESSAGE_TYPE_RPC), sstream, Qnil);
-    fwrite_lisp_binary_object(make_int(3), sstream, Qnil); // nargs
-    fwrite_lisp_binary_object(build_string(func), sstream, Qnil);
-    fwrite_lisp_binary_object(argl, sstream, Qnil);
-    fwrite_lisp_binary_object(context, sstream, Qnil);
+    fwrite_lisp_binary_object(make_int(message_id), sstream);
+    fwrite_lisp_binary_object(make_int(MESSAGE_TYPE_RPC), sstream);
+    fwrite_lisp_binary_object(make_int(3), sstream); // nargs
+    fwrite_lisp_binary_object(build_string(func), sstream);
+    fwrite_lisp_binary_object(argl, sstream);
+    fwrite_lisp_binary_object(context, sstream);
     fclose(sstream);
 
     zmq_msg_t out_msg;
@@ -604,9 +644,10 @@ Lisp_Object alien_rpc (char* func, ptrdiff_t argc, Lisp_Object *argv)
   }
   printf("\n");
 #endif
+  stack_clear();
   FILE *stream = fmemopen(zmq_msg_data(&in_msg), zmq_msg_size(&in_msg), "r");
-  Lisp_Object lmessage_type = fread_lisp_binary_object(stream, Qnil);
-  Lisp_Object result = fread_lisp_binary_object(stream, Qnil);
+  Lisp_Object lmessage_type = fread_lisp_binary_object(stream);
+  Lisp_Object result = fread_lisp_binary_object(stream);
 #ifdef RPC_DEBUG
   debug_lisp_object("RPC_DEBUG message_type: ", lmessage_type);
   debug_lisp_object("RPC_DEBUG response: ", result);
@@ -726,11 +767,11 @@ init_alien_intercomm (void)
 
 
   /* ////// recursion test */
-  /* Lisp_Object  */
+  /* Lisp_Object */
   /*   num1 = make_fixnum(1), */
   /*   num2 = make_fixnum(2); */
   /* // (1 (2 (#))) */
-  /* Lisp_Object  */
+  /* Lisp_Object */
   /*   cons2 = Fcons(num2, num1), */
   /*   cons1 = Fcons(num1, cons2); */
   /* XSETCDR (cons2, cons1); */
