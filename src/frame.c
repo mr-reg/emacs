@@ -1027,7 +1027,8 @@ make_frame (bool mini_p)
   rw->pixel_height = rw->total_lines * FRAME_LINE_HEIGHT (f);
 
   fset_face_hash_table
-    (f, CALLN (Fmake_hash_table, QCtest, Qeq));
+    (f, make_hash_table (hashtest_eq, DEFAULT_HASH_SIZE, DEFAULT_REHASH_SIZE,
+                         DEFAULT_REHASH_THRESHOLD, Qnil, false));
 
   if (mini_p)
     {

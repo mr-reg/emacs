@@ -5155,63 +5155,63 @@ sxhash_obj (Lisp_Object obj, int depth)
 			    Lisp Interface
  ***********************************************************************/
 
-/* DEFUN ("sxhash-eq", Fsxhash_eq, Ssxhash_eq, 1, 1, 0, */
-/*        doc: /\* Return an integer hash code for OBJ suitable for `eq'. */
-/* If (eq A B), then (= (sxhash-eq A) (sxhash-eq B)). */
+DEFUN ("sxhash-eq", Fsxhash_eq, Ssxhash_eq, 1, 1, 0,
+       doc: /* Return an integer hash code for OBJ suitable for `eq'.
+If (eq A B), then (= (sxhash-eq A) (sxhash-eq B)).
 
-/* Hash codes are not guaranteed to be preserved across Emacs sessions.  *\/) */
-/*   (Lisp_Object obj) */
-/* { */
-/*   return hashfn_eq (obj, NULL); */
-/* } */
+Hash codes are not guaranteed to be preserved across Emacs sessions.  */)
+  (Lisp_Object obj)
+{
+  return hashfn_eq (obj, NULL);
+}
 
-/* DEFUN ("sxhash-eql", Fsxhash_eql, Ssxhash_eql, 1, 1, 0, */
-/*        doc: /\* Return an integer hash code for OBJ suitable for `eql'. */
-/* If (eql A B), then (= (sxhash-eql A) (sxhash-eql B)), but the opposite */
-/* isn't necessarily true. */
+DEFUN ("sxhash-eql", Fsxhash_eql, Ssxhash_eql, 1, 1, 0,
+       doc: /* Return an integer hash code for OBJ suitable for `eql'.
+If (eql A B), then (= (sxhash-eql A) (sxhash-eql B)), but the opposite
+isn't necessarily true.
 
-/* Hash codes are not guaranteed to be preserved across Emacs sessions.  *\/) */
-/*   (Lisp_Object obj) */
-/* { */
-/*   return hashfn_eql (obj, NULL); */
-/* } */
+Hash codes are not guaranteed to be preserved across Emacs sessions.  */)
+  (Lisp_Object obj)
+{
+  return hashfn_eql (obj, NULL);
+}
 
-/* DEFUN ("sxhash-equal", Fsxhash_equal, Ssxhash_equal, 1, 1, 0, */
-/*        doc: /\* Return an integer hash code for OBJ suitable for `equal'. */
-/* If (equal A B), then (= (sxhash-equal A) (sxhash-equal B)), but the */
-/* opposite isn't necessarily true. */
+DEFUN ("sxhash-equal", Fsxhash_equal, Ssxhash_equal, 1, 1, 0,
+       doc: /* Return an integer hash code for OBJ suitable for `equal'.
+If (equal A B), then (= (sxhash-equal A) (sxhash-equal B)), but the
+opposite isn't necessarily true.
 
-/* Hash codes are not guaranteed to be preserved across Emacs sessions.  *\/) */
-/*   (Lisp_Object obj) */
-/* { */
-/*   return hashfn_equal (obj, NULL); */
-/* } */
+Hash codes are not guaranteed to be preserved across Emacs sessions.  */)
+  (Lisp_Object obj)
+{
+  return hashfn_equal (obj, NULL);
+}
 
-/* DEFUN ("sxhash-equal-including-properties", Fsxhash_equal_including_properties, */
-/*        Ssxhash_equal_including_properties, 1, 1, 0, */
-/*        doc: /\* Return an integer hash code for OBJ suitable for */
-/* `equal-including-properties'. */
-/* If (sxhash-equal-including-properties A B), then */
-/* (= (sxhash-equal-including-properties A) (sxhash-equal-including-properties B)). */
+DEFUN ("sxhash-equal-including-properties", Fsxhash_equal_including_properties,
+       Ssxhash_equal_including_properties, 1, 1, 0,
+       doc: /* Return an integer hash code for OBJ suitable for
+`equal-including-properties'.
+If (sxhash-equal-including-properties A B), then
+(= (sxhash-equal-including-properties A) (sxhash-equal-including-properties B)).
 
-/* Hash codes are not guaranteed to be preserved across Emacs sessions.  *\/) */
-/*   (Lisp_Object obj) */
-/* { */
-/*   if (STRINGP (obj)) */
-/*     { */
-/*       Lisp_Object collector = Fcons (Qnil, Qnil); */
-/*       traverse_intervals (string_intervals (obj), 0, collect_interval, */
-/* 			  collector); */
-/*       return */
-/* 	make_ufixnum ( */
-/* 	  SXHASH_REDUCE (sxhash_combine (sxhash (obj), */
-/* 					 sxhash (CDR (collector))))); */
-/*     } */
+Hash codes are not guaranteed to be preserved across Emacs sessions.  */)
+  (Lisp_Object obj)
+{
+  if (STRINGP (obj))
+    {
+      Lisp_Object collector = Fcons (Qnil, Qnil);
+      traverse_intervals (string_intervals (obj), 0, collect_interval,
+			  collector);
+      return
+	make_ufixnum (
+	  SXHASH_REDUCE (sxhash_combine (sxhash (obj),
+					 sxhash (CDR (collector)))));
+    }
 
-/*   return hashfn_equal (obj, NULL); */
-/* } */
+  return hashfn_equal (obj, NULL);
+}
 
-DEFUN ("make-hash-table-old", Fmake_hash_table_old, Smake_hash_table_old, 0, MANY, 0,
+DEFUN ("make-hash-table", Fmake_hash_table, Smake_hash_table, 0, MANY, 0,
        doc: /* Create and return a new hash table.
 
 Arguments are specified as keyword/argument pairs.  The following
@@ -5342,98 +5342,98 @@ usage: (make-hash-table &rest KEYWORD-ARGS)  */)
 }
 
 
-/* DEFUN ("copy-hash-table", Fcopy_hash_table, Scopy_hash_table, 1, 1, 0, */
-/*        doc: /\* Return a copy of hash table TABLE.  *\/) */
-/*   (Lisp_Object table) */
-/* { */
-/*   return copy_hash_table (check_hash_table (table)); */
-/* } */
+DEFUN ("copy-hash-table", Fcopy_hash_table, Scopy_hash_table, 1, 1, 0,
+       doc: /* Return a copy of hash table TABLE.  */)
+  (Lisp_Object table)
+{
+  return copy_hash_table (check_hash_table (table));
+}
 
 
-/* DEFUN ("hash-table-count", Fhash_table_count, Shash_table_count, 1, 1, 0, */
-/*        doc: /\* Return the number of elements in TABLE.  *\/) */
-/*   (Lisp_Object table) */
-/* { */
-/*   struct Lisp_Hash_Table *h = check_hash_table (table); */
-/*   return make_fixnum (h->count); */
-/* } */
+DEFUN ("hash-table-count", Fhash_table_count, Shash_table_count, 1, 1, 0,
+       doc: /* Return the number of elements in TABLE.  */)
+  (Lisp_Object table)
+{
+  struct Lisp_Hash_Table *h = check_hash_table (table);
+  return make_fixnum (h->count);
+}
 
 
-/* DEFUN ("hash-table-rehash-size", Fhash_table_rehash_size, */
-/*        Shash_table_rehash_size, 1, 1, 0, */
-/*        doc: /\* Return the current rehash size of TABLE.  *\/) */
-/*   (Lisp_Object table) */
-/* { */
-/*   double rehash_size = check_hash_table (table)->rehash_size; */
-/*   if (rehash_size < 0) */
-/*     { */
-/*       EMACS_INT s = -rehash_size; */
-/*       return make_fixnum (min (s, MOST_POSITIVE_FIXNUM)); */
-/*     } */
-/*   else */
-/*     return make_float (rehash_size + 1); */
-/* } */
+DEFUN ("hash-table-rehash-size", Fhash_table_rehash_size,
+       Shash_table_rehash_size, 1, 1, 0,
+       doc: /* Return the current rehash size of TABLE.  */)
+  (Lisp_Object table)
+{
+  double rehash_size = check_hash_table (table)->rehash_size;
+  if (rehash_size < 0)
+    {
+      EMACS_INT s = -rehash_size;
+      return make_fixnum (min (s, MOST_POSITIVE_FIXNUM));
+    }
+  else
+    return make_float (rehash_size + 1);
+}
 
 
-/* DEFUN ("hash-table-rehash-threshold", Fhash_table_rehash_threshold, */
-/*        Shash_table_rehash_threshold, 1, 1, 0, */
-/*        doc: /\* Return the current rehash threshold of TABLE.  *\/) */
-/*   (Lisp_Object table) */
-/* { */
-/*   return make_float (check_hash_table (table)->rehash_threshold); */
-/* } */
+DEFUN ("hash-table-rehash-threshold", Fhash_table_rehash_threshold,
+       Shash_table_rehash_threshold, 1, 1, 0,
+       doc: /* Return the current rehash threshold of TABLE.  */)
+  (Lisp_Object table)
+{
+  return make_float (check_hash_table (table)->rehash_threshold);
+}
 
 
-/* DEFUN ("hash-table-size", Fhash_table_size, Shash_table_size, 1, 1, 0, */
-/*        doc: /\* Return the size of TABLE. */
-/* The size can be used as an argument to `make-hash-table' to create */
-/* a hash table than can hold as many elements as TABLE holds */
-/* without need for resizing.  *\/) */
-/*   (Lisp_Object table) */
-/* { */
-/*   struct Lisp_Hash_Table *h = check_hash_table (table); */
-/*   return make_fixnum (HASH_TABLE_SIZE (h)); */
-/* } */
+DEFUN ("hash-table-size", Fhash_table_size, Shash_table_size, 1, 1, 0,
+       doc: /* Return the size of TABLE.
+The size can be used as an argument to `make-hash-table' to create
+a hash table than can hold as many elements as TABLE holds
+without need for resizing.  */)
+  (Lisp_Object table)
+{
+  struct Lisp_Hash_Table *h = check_hash_table (table);
+  return make_fixnum (HASH_TABLE_SIZE (h));
+}
 
 
-/* DEFUN ("hash-table-test", Fhash_table_test, Shash_table_test, 1, 1, 0, */
-/*        doc: /\* Return the test TABLE uses.  *\/) */
-/*   (Lisp_Object table) */
-/* { */
-/*   return check_hash_table (table)->test.name; */
-/* } */
+DEFUN ("hash-table-test", Fhash_table_test, Shash_table_test, 1, 1, 0,
+       doc: /* Return the test TABLE uses.  */)
+  (Lisp_Object table)
+{
+  return check_hash_table (table)->test.name;
+}
 
 
-/* DEFUN ("hash-table-weakness", Fhash_table_weakness, Shash_table_weakness, */
-/*        1, 1, 0, */
-/*        doc: /\* Return the weakness of TABLE.  *\/) */
-/*   (Lisp_Object table) */
-/* { */
-/*   return check_hash_table (table)->weak; */
-/* } */
+DEFUN ("hash-table-weakness", Fhash_table_weakness, Shash_table_weakness,
+       1, 1, 0,
+       doc: /* Return the weakness of TABLE.  */)
+  (Lisp_Object table)
+{
+  return check_hash_table (table)->weak;
+}
 
 
-/* DEFUN ("hash-table-p", Fhash_table_p, Shash_table_p, 1, 1, 0, */
-/*        doc: /\* Return t if OBJ is a Lisp hash table object.  *\/) */
-/*   (Lisp_Object obj) */
-/* { */
-/*   return HASH_TABLE_P (obj) ? Qt : Qnil; */
-/* } */
+DEFUN ("hash-table-p", Fhash_table_p, Shash_table_p, 1, 1, 0,
+       doc: /* Return t if OBJ is a Lisp hash table object.  */)
+  (Lisp_Object obj)
+{
+  return HASH_TABLE_P (obj) ? Qt : Qnil;
+}
 
 
-/* DEFUN ("clrhash", Fclrhash, Sclrhash, 1, 1, 0, */
-/*        doc: /\* Clear hash table TABLE and return it.  *\/) */
-/*   (Lisp_Object table) */
-/* { */
-/*   struct Lisp_Hash_Table *h = check_hash_table (table); */
-/*   check_mutable_hash_table (table, h); */
-/*   hash_clear (h); */
-/*   /\* Be compatible with XEmacs.  *\/ */
-/*   return table; */
-/* } */
+DEFUN ("clrhash", Fclrhash, Sclrhash, 1, 1, 0,
+       doc: /* Clear hash table TABLE and return it.  */)
+  (Lisp_Object table)
+{
+  struct Lisp_Hash_Table *h = check_hash_table (table);
+  check_mutable_hash_table (table, h);
+  hash_clear (h);
+  /* Be compatible with XEmacs.  */
+  return table;
+}
 
 
-DEFUN ("gethash-old", Fgethash_old, Sgethashold, 2, 3, 0,
+DEFUN ("gethash", Fgethash, Sgethash, 2, 3, 0,
        doc: /* Look up KEY in TABLE and return its associated value.
 If KEY is not found, return DFLT which defaults to nil.  */)
   (Lisp_Object key, Lisp_Object table, Lisp_Object dflt)
@@ -5444,7 +5444,7 @@ If KEY is not found, return DFLT which defaults to nil.  */)
 }
 
 
-DEFUN ("puthash-old", Fputhash_old, Sputhashold, 3, 3, 0,
+DEFUN ("puthash", Fputhash, Sputhash, 3, 3, 0,
        doc: /* Associate KEY with VALUE in hash table TABLE.
 If KEY is already present in table, replace its current value with
 VALUE.  In any case, return VALUE.  */)
@@ -5464,15 +5464,15 @@ VALUE.  In any case, return VALUE.  */)
 }
 
 
-/* DEFUN ("remhash", Fremhash, Sremhash, 2, 2, 0, */
-/*        doc: /\* Remove KEY from TABLE.  *\/) */
-/*   (Lisp_Object key, Lisp_Object table) */
-/* { */
-/*   struct Lisp_Hash_Table *h = check_hash_table (table); */
-/*   check_mutable_hash_table (table, h); */
-/*   hash_remove_from_table (h, key); */
-/*   return Qnil; */
-/* } */
+DEFUN ("remhash", Fremhash, Sremhash, 2, 2, 0,
+       doc: /* Remove KEY from TABLE.  */)
+  (Lisp_Object key, Lisp_Object table)
+{
+  struct Lisp_Hash_Table *h = check_hash_table (table);
+  check_mutable_hash_table (table, h);
+  hash_remove_from_table (h, key);
+  return Qnil;
+}
 
 
 DEFUN ("maphash", Fmaphash, Smaphash, 2, 2, 0,
@@ -5481,15 +5481,15 @@ FUNCTION is called with two arguments, KEY and VALUE.
 `maphash' always returns nil.  */)
   (Lisp_Object function, Lisp_Object table)
 {
-  Lisp_Object key_list = Fhash_table_keys_as_list(table);
-  while (CONSP(key_list))
-    {
-      Lisp_Object key = XCAR(key_list);
-      Lisp_Object value = Fgethash(key, table, Qnil);
-      key_list = XCDR(key_list);
-      call2 (function, key, value);
+  struct Lisp_Hash_Table *h = check_hash_table (table);
 
+  for (ptrdiff_t i = 0; i < HASH_TABLE_SIZE (h); ++i)
+    {
+      Lisp_Object k = HASH_KEY (h, i);
+      if (!BASE_EQ (k, Qunbound))
+        call2 (function, k, HASH_VALUE (h, i));
     }
+
   return Qnil;
 }
 
@@ -6179,19 +6179,23 @@ syms_of_fns (void)
   DEFSYM (Qkey_or_value, "key-or-value");
   DEFSYM (Qkey_and_value, "key-and-value");
 
-  /* defsubr (&Smake_hash_table); */
-  /* defsubr (&Scopy_hash_table); */
-  /* defsubr (&Shash_table_count); */
-  /* defsubr (&Shash_table_rehash_size); */
-  /* defsubr (&Shash_table_rehash_threshold); */
-  /* defsubr (&Shash_table_size); */
-  /* defsubr (&Shash_table_test); */
-  /* defsubr (&Shash_table_weakness); */
-  /* defsubr (&Shash_table_p); */
-  /* defsubr (&Sclrhash); */
-  /* defsubr (&Sgethash); */
-  /* defsubr (&Sputhash); */
-  /* defsubr (&Sremhash); */
+  defsubr (&Ssxhash_eq);
+  defsubr (&Ssxhash_eql);
+  defsubr (&Ssxhash_equal);
+  defsubr (&Ssxhash_equal_including_properties);
+  defsubr (&Smake_hash_table);
+  defsubr (&Scopy_hash_table);
+  defsubr (&Shash_table_count);
+  defsubr (&Shash_table_rehash_size);
+  defsubr (&Shash_table_rehash_threshold);
+  defsubr (&Shash_table_size);
+  defsubr (&Shash_table_test);
+  defsubr (&Shash_table_weakness);
+  defsubr (&Shash_table_p);
+  defsubr (&Sclrhash);
+  defsubr (&Sgethash);
+  defsubr (&Sputhash);
+  defsubr (&Sremhash);
   defsubr (&Smaphash);
   defsubr (&Sdefine_hash_table_test);
   defsubr (&Sstring_search);

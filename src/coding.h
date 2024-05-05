@@ -187,7 +187,7 @@ enum coding_attr_index
 /* Return the spec vector of CODING_SYSTEM_SYMBOL.  */
 
 #define CODING_SYSTEM_SPEC(coding_system_symbol)	\
-  (Fgethash_old (coding_system_symbol, Vcoding_system_hash_table, Qnil))
+  (Fgethash (coding_system_symbol, Vcoding_system_hash_table, Qnil))
 
 
 /* Return the ID of CODING_SYSTEM_SYMBOL.  */

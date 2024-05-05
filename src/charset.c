@@ -1291,7 +1291,7 @@ DEFUN ("define-charset-alias", Fdefine_charset_alias,
   Lisp_Object attr;
 
   CHECK_CHARSET_GET_ATTR (charset, attr);
-  Fputhash_old (alias, attr, Vcharset_hash_table);
+  Fputhash (alias, attr, Vcharset_hash_table);
   Vcharset_list = Fcons (alias, Vcharset_list);
   return Qnil;
 }
@@ -2361,7 +2361,7 @@ syms_of_charset (void)
   Vemacs_mule_charset_list = Qnil;
 
   staticpro (&Vcharset_hash_table);
-  Vcharset_hash_table = CALLN (Fmake_hash_table_old, QCtest, Qeq);
+  Vcharset_hash_table = CALLN (Fmake_hash_table, QCtest, Qeq);
 
   charset_table = charset_table_init;
   charset_table_size = ARRAYELTS (charset_table_init);
